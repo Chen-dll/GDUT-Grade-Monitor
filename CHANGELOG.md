@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.4 - 2026-07-08
+
+### Changed
+
+- Improved the first-run guide with clearer wording for one-click setup, local-only password storage, baseline behavior, and the default 30-minute check interval.
+- After one-click setup completes, the GUI now returns to the dashboard and confirms that background reminders are ready.
+
 ## 0.2.3 - 2026-07-08
 
 ### Added

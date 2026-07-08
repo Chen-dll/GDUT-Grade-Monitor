@@ -244,7 +244,7 @@ def setup_guidance(startup_installed: bool, config: dict, state: dict, required_
     last_check = str(state.get("monitor", {}).get("last_check_at", "尚未检查")).replace("T", " ")
     return {
         "tone": "ok",
-        "title": "后台提醒已准备好",
+        "title": "现在已经可以后台提醒了",
         "body": f"当前会在 Windows 登录后后台运行，每 {interval} 分钟只读检查一次。最近检查: {last_check}",
         "primary_action": "立即检查",
     }
@@ -254,7 +254,7 @@ def onboarding_steps() -> list[dict[str, str]]:
     return [
         {
             "title": "一键配置本机",
-            "body": "填写学号、密码和查询频率，程序会把密码保存到 Windows 凭据管理器。",
+            "body": "先点击“一键配置本机”，填写学号、密码和查询频率；密码不会上传，只保存到 Windows 凭据管理器。",
         },
         {
             "title": "完成浏览器登录",
@@ -262,7 +262,7 @@ def onboarding_steps() -> list[dict[str, str]]:
         },
         {
             "title": "建立成绩基线",
-            "body": "首次读取只保存本地快照，不会弹出成绩变化提醒。",
+            "body": "首次读取只保存本地快照，第一次不会提醒，之后才比较新增或变化成绩。",
         },
         {
             "title": "后台自动提醒",

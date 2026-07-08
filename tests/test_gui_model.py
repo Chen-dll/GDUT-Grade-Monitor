@@ -86,16 +86,19 @@ class GuiModelTests(unittest.TestCase):
         guidance = setup_guidance(startup_installed=True, config=config, state=state, required_checks_ok=True)
 
         self.assertEqual(guidance["tone"], "ok")
-        self.assertEqual(guidance["title"], "后台提醒已准备好")
+        self.assertEqual(guidance["title"], "现在已经可以后台提醒了")
         self.assertIn("每 15 分钟", guidance["body"])
         self.assertIn("2026-07-08 00:30:00", guidance["body"])
 
     def test_onboarding_steps_explain_first_run_flow(self):
         text = "\n".join(f"{step['title']} {step['body']}" for step in onboarding_steps())
 
+        self.assertIn("先点击", text)
         self.assertIn("一键配置本机", text)
+        self.assertIn("密码不会上传", text)
         self.assertIn("完成浏览器登录", text)
         self.assertIn("建立成绩基线", text)
+        self.assertIn("第一次不会提醒", text)
         self.assertIn("后台自动提醒", text)
         self.assertIn("默认每 30 分钟", text)
 

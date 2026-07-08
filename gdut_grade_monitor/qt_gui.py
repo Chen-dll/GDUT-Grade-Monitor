@@ -599,7 +599,7 @@ class GradeMonitorQtApp(QMainWindow):
         intro = QVBoxLayout()
         title = QLabel("新手引导")
         title.setObjectName("cardTitle")
-        body = QLabel("第一次使用按顺序走完；以后只需要打开应用看状态。")
+        body = QLabel("第一次打开时先点“一键配置本机”。密码不会上传，首次读取只建基线，第一次不会提醒；默认每 30 分钟检查一次。")
         body.setObjectName("muted")
         body.setWordWrap(True)
         intro.addWidget(title)
@@ -1084,10 +1084,15 @@ class GradeMonitorQtApp(QMainWindow):
         grades, result = payload
         self._fill_table(self.grades_table, grade_table_rows(grades))
         self.refresh_all()
+        self._set_page(0)
         if result.startup_mode == "failed":
             QMessageBox.warning(self, "一键配置本机", "成绩基线已建立，但自启动安装失败。请稍后手动重试。")
             return
-        QMessageBox.information(self, "一键配置本机", f"配置完成。已建立 {result.grade_count} 条成绩基线。")
+        QMessageBox.information(
+            self,
+            "首次配置已完成",
+            f"现在已经可以后台提醒了。\n\n已建立 {result.grade_count} 条成绩基线；首次配置不会对已有成绩弹通知。",
+        )
 
     def check_now(self) -> None:
         self._run_background(self._check_now_worker, self._check_complete)

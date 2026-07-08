@@ -64,8 +64,19 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("help_sections", text)
         self.assertIn("onboarding_steps", text)
         self.assertIn("新手引导", text)
+        self.assertIn("先点“一键配置本机”", text)
+        self.assertIn("密码不会上传", text)
+        self.assertIn("第一次不会提醒", text)
         self.assertIn("查看帮助", text)
         self.assertIn("关于", text)
+
+    def test_qt_setup_completion_returns_to_dashboard_with_ready_message(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        complete_block = text.split("def _one_click_setup_complete", 1)[1].split("def check_now", 1)[0]
+
+        self.assertIn("self._set_page(0)", complete_block)
+        self.assertIn("现在已经可以后台提醒了", complete_block)
+        self.assertIn("首次配置已完成", complete_block)
 
     def test_single_instance_lock_blocks_second_owner(self):
         from gdut_grade_monitor.qt_gui import _acquire_single_instance_lock
