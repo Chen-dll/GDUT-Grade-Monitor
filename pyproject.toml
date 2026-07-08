@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gdut-grade-monitor"
-version = "0.2.6"
+version = "0.2.7"
 description = "Read-only GDUT grade monitor with Windows notifications."
 readme = "README.md"
 requires-python = ">=3.10"

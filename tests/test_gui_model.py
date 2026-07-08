@@ -3,7 +3,8 @@ import unittest
 from gdut_grade_monitor.doctor import CheckResult
 from gdut_grade_monitor.gui_model import filter_grades, grade_analytics, grade_table_rows, recent_change_rows, semester_options
 from gdut_grade_monitor.gui_model import status_summary
-from gdut_grade_monitor.gui_model import doctor_table_rows, first_run_wizard_pages, help_sections, onboarding_steps, setup_guidance
+from gdut_grade_monitor.gui_model import doctor_table_rows, first_run_wizard_pages, help_sections, onboarding_steps
+from gdut_grade_monitor.gui_model import setup_guidance, status_center_rows
 
 
 class GuiModelTests(unittest.TestCase):
@@ -89,6 +90,38 @@ class GuiModelTests(unittest.TestCase):
         self.assertEqual(guidance["title"], "现在已经可以后台提醒了")
         self.assertIn("每 15 分钟", guidance["body"])
         self.assertIn("2026-07-08 00:30:00", guidance["body"])
+
+    def test_status_center_rows_explain_runtime_health(self):
+        config = {"student_id": "3210000000", "poll_interval_minutes": 30, "monitor_paused_until": "2026-07-08T13:00:00"}
+        state = {
+            "last_check_status": "error",
+            "last_error": "登录已过期",
+            "grades": {"202502|CS101|数据结构": {"score": "95"}},
+            "monitor": {"last_check_at": "2026-07-08T12:00:00", "heartbeat_at": "2026-07-08T12:01:00"},
+        }
+
+        rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-08T12:00:00")
+        text = "\n".join(f"{row['label']} {row['value']} {row['detail']}" for row in rows)
+
+        self.assertIn("后台状态 暂停中", text)
+        self.assertIn("最近检查 2026-07-08 12:00:00", text)
+        self.assertIn("下次检查 暂停到 2026-07-08 13:00:00", text)
+        self.assertIn("登录配置 已保存账号", text)
+        self.assertIn("后台自启动 已开启", text)
+        self.assertIn("最近错误 登录已过期", text)
+
+    def test_status_center_rows_ignores_expired_pause(self):
+        config = {"student_id": "3210000000", "poll_interval_minutes": 30, "monitor_paused_until": "2026-07-08T11:00:00"}
+        state = {
+            "last_check_status": "ok",
+            "monitor": {"last_check_at": "2026-07-08T12:00:00", "heartbeat_at": "2026-07-08T12:00:00"},
+        }
+
+        rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-08T12:00:00")
+        text = "\n".join(f"{row['label']} {row['value']} {row['detail']}" for row in rows)
+
+        self.assertIn("后台状态 运行正常", text)
+        self.assertIn("下次检查 每 30 分钟", text)
 
     def test_onboarding_steps_explain_first_run_flow(self):
         text = "\n".join(f"{step['title']} {step['body']}" for step in onboarding_steps())

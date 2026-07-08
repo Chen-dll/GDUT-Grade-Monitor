@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime
 from math import isfinite
 
 from .constants import APP_AUTHOR, APP_VERSION, GRADE_PATH, WELCOME_PATH
@@ -139,6 +140,67 @@ def next_check_summary(state: dict) -> str:
     interval = monitor.get("poll_interval_minutes", 30)
     last_check = str(monitor.get("last_check_at", "尚未检查")).replace("T", " ")
     return f"最近检查: {last_check}    查询频率: 每 {interval} 分钟"
+
+
+def status_center_rows(config: dict, state: dict, startup_installed: bool, now_iso: str | None = None) -> list[dict[str, str]]:
+    monitor = state.get("monitor", {})
+    raw_status = state.get("last_check_status") or "idle"
+    paused_until_raw = str(config.get("monitor_paused_until", "") or "").strip()
+    paused_until = paused_until_raw.replace("T", " ") if _pause_is_active(paused_until_raw, now_iso) else ""
+    last_check = str(monitor.get("last_check_at", "尚未检查")).replace("T", " ")
+    heartbeat = str(monitor.get("heartbeat_at", "尚未启动")).replace("T", " ")
+    interval = int(config.get("poll_interval_minutes", 30))
+
+    status_labels = {
+        "ok": ("运行正常", "上次只读检查已完成。", "ok"),
+        "paused": ("暂停中", "自动后台检查已暂停，手动立即检查仍可使用。", "warning"),
+        "error": ("需要处理", "上次检查遇到问题，可重新登录或导出诊断包。", "error"),
+        "idle": ("等待配置", "完成一键配置后会开始后台提醒。", "warning"),
+    }
+    status_value, status_detail, status_tone = status_labels.get(raw_status, (str(raw_status), "查看日志或诊断包了解详情。", "warning"))
+    if paused_until:
+        status_value = "暂停中"
+        status_detail = "自动后台检查已暂停，手动立即检查仍可使用。"
+        status_tone = "warning"
+
+    next_value = f"每 {interval} 分钟"
+    next_detail = "后台启动后按此频率只读检查。"
+    if paused_until:
+        next_value = f"暂停到 {paused_until}"
+        next_detail = "到点后自动恢复按频率检查。"
+
+    rows = [
+        {"label": "后台状态", "value": status_value, "detail": status_detail, "tone": status_tone},
+        {"label": "最近检查", "value": last_check, "detail": f"最近心跳: {heartbeat}", "tone": "neutral"},
+        {"label": "下次检查", "value": next_value, "detail": next_detail, "tone": "neutral"},
+        {
+            "label": "登录配置",
+            "value": "已保存账号" if config.get("student_id") else "未配置",
+            "detail": "密码保存在 Windows 凭据管理器。" if config.get("student_id") else "点击一键配置本机完成登录。",
+            "tone": "ok" if config.get("student_id") else "warning",
+        },
+        {
+            "label": "后台自启动",
+            "value": "已开启" if startup_installed else "未开启",
+            "detail": "Windows 登录后会自动后台检查。" if startup_installed else "建议在设置页安装自启动。",
+            "tone": "ok" if startup_installed else "warning",
+        },
+    ]
+    last_error = str(state.get("last_error", "") or "").strip()
+    if last_error:
+        rows.append({"label": "最近错误", "value": last_error, "detail": "可重新登录、打开环境检查或导出诊断包。", "tone": "error"})
+    return rows
+
+
+def _pause_is_active(paused_until: str, now_iso: str | None = None) -> bool:
+    if not paused_until:
+        return False
+    try:
+        until = datetime.fromisoformat(paused_until)
+        now = datetime.fromisoformat(now_iso) if now_iso else datetime.now()
+    except ValueError:
+        return False
+    return until > now
 
 
 def _number(value) -> float | None:

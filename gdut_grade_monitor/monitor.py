@@ -42,6 +42,7 @@ class GradeMonitor:
         state["grades"] = snapshot
         state["last_check_status"] = "ok"
         state["last_change_count"] = len(changes)
+        state.pop("last_error", None)
         state["monitor"] = {
             "last_check_at": checked_at,
             "heartbeat_at": checked_at,
@@ -56,13 +57,31 @@ class GradeMonitor:
 
     def run_forever(self) -> None:
         while True:
+            config = load_config(self.paths)
+            interval_seconds = int(config.get("poll_interval_minutes", 30)) * 60
+            pause_remaining = monitor_pause_remaining_seconds(config)
+            if pause_remaining > 0:
+                self._record_runtime_status("paused")
+                time.sleep(min(interval_seconds, pause_remaining))
+                continue
             try:
                 self.run_once()
             except Exception as exc:
                 self.logger.exception("Grade check failed: %s", exc)
-            config = load_config(self.paths)
-            interval_seconds = int(config.get("poll_interval_minutes", 30)) * 60
+                self._record_runtime_status("error", str(exc))
             time.sleep(interval_seconds)
+
+    def _record_runtime_status(self, status: str, error: str = "") -> None:
+        state = load_state(self.paths)
+        monitor = state.get("monitor", {})
+        checked_at = datetime.now().isoformat(timespec="seconds")
+        monitor["heartbeat_at"] = checked_at
+        monitor["poll_interval_minutes"] = int(load_config(self.paths).get("poll_interval_minutes", 30))
+        state["monitor"] = monitor
+        state["last_check_status"] = status
+        if error:
+            state["last_error"] = error
+        save_state(self.paths, state)
 
 
 def _history_entry(change: dict, checked_at: str) -> dict:
@@ -77,3 +96,15 @@ def _history_entry(change: dict, checked_at: str) -> dict:
     if "old_score" in change:
         entry["old_score"] = change["old_score"]
     return entry
+
+
+def monitor_pause_remaining_seconds(config: dict, now_iso: str | None = None) -> int:
+    paused_until = str(config.get("monitor_paused_until", "") or "").strip()
+    if not paused_until:
+        return 0
+    try:
+        until = datetime.fromisoformat(paused_until)
+        now = datetime.fromisoformat(now_iso) if now_iso else datetime.now()
+    except ValueError:
+        return 0
+    return max(0, int((until - now).total_seconds()))

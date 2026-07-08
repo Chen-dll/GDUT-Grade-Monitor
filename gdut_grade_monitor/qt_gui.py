@@ -4,7 +4,7 @@ import os
 import sys
 import threading
 import ctypes
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -62,7 +62,7 @@ from .errors import user_friendly_error_message
 from .gui_model import about_text, doctor_table_rows, filter_grades, first_run_wizard_pages, grade_analytics, grade_table_rows
 from .gui_model import help_sections, history_table_rows
 from .gui_model import onboarding_steps, recent_change_rows, semester_options
-from .gui_model import setup_guidance, status_summary
+from .gui_model import setup_guidance, status_center_rows, status_summary
 from .monitor import GradeMonitor
 from .notify import WindowsNotifier
 from .official_transcript import OFFICIAL_TRANSCRIPT_PORTAL_URL, official_transcript_guidance
@@ -685,6 +685,7 @@ class GradeMonitorQtApp(QMainWindow):
         status_layout.addWidget(next_box)
         page.layout().addWidget(self.status_panel)
         page.layout().addWidget(self._onboarding_card())
+        page.layout().addWidget(self._runtime_status_card())
 
         middle = QHBoxLayout()
         self.recent_card = _card()
@@ -729,6 +730,41 @@ class GradeMonitorQtApp(QMainWindow):
         page.layout().addWidget(actions_card)
         page.layout().addStretch(1)
         return page
+
+    def _runtime_status_card(self) -> QWidget:
+        card = _card()
+        card.setObjectName("runtimeCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        top = QHBoxLayout()
+        title = QLabel("运行状态中心")
+        title.setObjectName("cardTitle")
+        hint = QLabel("看后台是否在查、下次什么时候查、最近有没有错误。")
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        pause_button = QPushButton("暂停 1 小时")
+        pause_button.setObjectName("secondaryButton")
+        pause_button.clicked.connect(self.pause_monitor_for_one_hour)
+        resume_button = QPushButton("恢复检查")
+        resume_button.setObjectName("secondaryButton")
+        resume_button.clicked.connect(self.resume_monitor)
+        log_button = QPushButton("查看日志")
+        log_button.setObjectName("secondaryButton")
+        log_button.clicked.connect(self.open_log_file)
+        top.addWidget(title)
+        top.addWidget(hint, 1)
+        top.addWidget(pause_button)
+        top.addWidget(resume_button)
+        top.addWidget(log_button)
+        layout.addLayout(top)
+
+        self.status_center_grid = QGridLayout()
+        self.status_center_grid.setHorizontalSpacing(10)
+        self.status_center_grid.setVerticalSpacing(10)
+        layout.addLayout(self.status_center_grid)
+        return card
 
     def _onboarding_card(self) -> QWidget:
         card = _card()
@@ -1035,17 +1071,37 @@ class GradeMonitorQtApp(QMainWindow):
         self.tray = QSystemTrayIcon(QIcon(str(app_icon_path())), self)
         menu = QMenu()
         show_action = QAction("打开主界面", self)
-        show_action.triggered.connect(self.showNormal)
+        show_action.triggered.connect(self.open_runtime_status)
+        status_action = QAction("查看运行状态", self)
+        status_action.triggered.connect(self.open_runtime_status)
         check_action = QAction("立即检查", self)
         check_action.triggered.connect(self.check_now)
+        pause_action = QAction("暂停提醒 1 小时", self)
+        pause_action.triggered.connect(self.pause_monitor_for_one_hour)
+        resume_action = QAction("恢复后台检查", self)
+        resume_action.triggered.connect(self.resume_monitor)
+        log_action = QAction("查看日志", self)
+        log_action.triggered.connect(self.open_log_file)
         quit_action = QAction("退出", self)
         quit_action.triggered.connect(QApplication.instance().quit)
         menu.addAction(show_action)
+        menu.addAction(status_action)
         menu.addAction(check_action)
+        menu.addSeparator()
+        menu.addAction(pause_action)
+        menu.addAction(resume_action)
+        menu.addSeparator()
+        menu.addAction(log_action)
         menu.addSeparator()
         menu.addAction(quit_action)
         self.tray.setContextMenu(menu)
         self.tray.show()
+
+    def open_runtime_status(self) -> None:
+        self.showNormal()
+        self._set_page(0)
+        self.raise_()
+        self.activateWindow()
 
     def _set_page(self, row: int) -> None:
         self.pages.setCurrentIndex(max(0, row))
@@ -1071,6 +1127,7 @@ class GradeMonitorQtApp(QMainWindow):
         self.next_check_label.setText(f"每 {config.get('poll_interval_minutes', 30)} 分钟")
         self._set_recent_changes(recent_change_rows(state))
         self._set_summary_cards(state, config, installed)
+        self._set_status_center(status_center_rows(config, state, installed))
 
     def _set_recent_changes(self, recent: list[tuple[str, str, str]]) -> None:
         while self.recent_list.count():
@@ -1123,6 +1180,39 @@ class GradeMonitorQtApp(QMainWindow):
             layout.addWidget(score_label)
             self.recent_list.addWidget(row)
         self.recent_list.addStretch(1)
+
+    def _set_status_center(self, rows: list[dict[str, str]]) -> None:
+        while self.status_center_grid.count():
+            item = self.status_center_grid.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+
+        for index, row_data in enumerate(rows):
+            tone = row_data.get("tone", "neutral").title()
+            tile = QFrame()
+            tile.setObjectName("runtimeTile")
+            tile.setToolTip(
+                f"{row_data.get('label', '')}\n{row_data.get('value', '')}\n{row_data.get('detail', '')}".strip()
+            )
+            layout = QVBoxLayout(tile)
+            layout.setContentsMargins(14, 12, 14, 12)
+            layout.setSpacing(5)
+
+            label = QLabel(row_data.get("label", ""))
+            label.setObjectName("runtimeLabel")
+            value = QLabel(row_data.get("value", ""))
+            value.setObjectName(f"runtimeValue{tone}")
+            value.setWordWrap(True)
+            detail = QLabel(row_data.get("detail", ""))
+            detail.setObjectName("runtimeDetail")
+            detail.setWordWrap(True)
+
+            layout.addWidget(label)
+            layout.addWidget(value)
+            layout.addWidget(detail)
+            self.status_center_grid.addWidget(tile, index // 3, index % 3)
 
     def _set_summary_cards(self, state: dict, config: dict, installed: bool) -> None:
         while self.summary_grid.count():
@@ -1317,6 +1407,37 @@ class GradeMonitorQtApp(QMainWindow):
     def open_data_dir(self) -> None:
         os.startfile(self.paths.root)
 
+    def open_log_file(self) -> None:
+        self.paths.ensure()
+        if self.paths.log_file.exists():
+            os.startfile(self.paths.log_file)
+            return
+        os.startfile(self.paths.log_dir)
+        QMessageBox.information(self, "查看日志", "暂时还没有日志文件，已打开日志目录。")
+
+    def pause_monitor_for_one_hour(self) -> None:
+        config = load_config(self.paths)
+        paused_until = datetime.now() + timedelta(hours=1)
+        config["monitor_paused_until"] = paused_until.isoformat(timespec="seconds")
+        save_config(self.paths, config)
+        self.refresh_status()
+        message = f"已暂停到 {paused_until.strftime('%H:%M')}，期间仍可手动立即检查。"
+        if self.tray:
+            self.tray.showMessage("GDUT 成绩提醒", message, QSystemTrayIcon.Information, 3000)
+        else:
+            QMessageBox.information(self, "暂停提醒", message)
+
+    def resume_monitor(self) -> None:
+        config = load_config(self.paths)
+        config.pop("monitor_paused_until", None)
+        save_config(self.paths, config)
+        self.refresh_status()
+        message = "已恢复后台自动检查。"
+        if self.tray:
+            self.tray.showMessage("GDUT 成绩提醒", message, QSystemTrayIcon.Information, 3000)
+        else:
+            QMessageBox.information(self, "恢复后台检查", message)
+
     def check_for_updates(self) -> None:
         self._run_background(lambda: check_latest_release(APP_VERSION), self._update_check_complete)
 
@@ -1464,6 +1585,15 @@ class GradeMonitorQtApp(QMainWindow):
             QFrame#recentRow { background: #f8fafc; border: 1px solid #e7edf5; border-radius: 12px; }
             QFrame#recentRow:hover { background: #eef4ff; border-color: #c7d8ff; }
             QFrame#recentEmpty { background: #f8fafc; border: 1px dashed #d7e0ec; border-radius: 12px; }
+            QFrame#runtimeCard { background: white; border: 1px solid #e3e8f0; border-radius: 16px; }
+            QFrame#runtimeTile { background: #f8fafc; border: 1px solid #e7edf5; border-radius: 12px; }
+            QFrame#runtimeTile:hover { background: #eef4ff; border-color: #c7d8ff; }
+            #runtimeLabel { color: #64748b; font-size: 12px; }
+            #runtimeValueOk { color: #15803d; font-size: 16px; font-weight: 900; }
+            #runtimeValueWarning { color: #b45309; font-size: 16px; font-weight: 900; }
+            #runtimeValueError { color: #b91c1c; font-size: 16px; font-weight: 900; }
+            #runtimeValueNeutral { color: #0f172a; font-size: 16px; font-weight: 900; }
+            #runtimeDetail { color: #64748b; font-size: 12px; }
             QFrame#guideCard { background: white; border: 1px solid #e3e8f0; border-radius: 16px; }
             QFrame#guideStep { background: #f8fbff; border: 1px solid #e4edf8; border-radius: 12px; }
             #guideStepTitle { color: #0f172a; font-weight: 800; font-size: 13px; }

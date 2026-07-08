@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.7 - 2026-07-08
+
+### Added
+
+- Added a dashboard runtime status center showing background state, last check, next check, login setup, autostart, and recent errors.
+- Added tray and dashboard actions to pause background reminders for one hour, resume background checks, and open monitor logs.
+
+### Changed
+
+- The background monitor now records heartbeat/error status while paused or after failed checks, making runtime state easier to diagnose.
+- Successful grade checks now clear stale previous errors so the UI does not keep showing fixed problems.
+- Expired pause timestamps are ignored in the status center instead of incorrectly showing "paused".
+
 ## 0.2.6 - 2026-07-08
 
 ### Fixed

@@ -81,6 +81,17 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("查看帮助", text)
         self.assertIn("新手向导", text)
         self.assertIn("关于", text)
+        self.assertIn("status_center_rows", text)
+        self.assertIn("运行状态中心", text)
+        self.assertIn("def _set_status_center", text)
+        self.assertIn("runtimeTile", text)
+        self.assertIn("查看运行状态", text)
+        self.assertIn("暂停提醒 1 小时", text)
+        self.assertIn("恢复后台检查", text)
+        self.assertIn("查看日志", text)
+        self.assertIn("def pause_monitor_for_one_hour", text)
+        self.assertIn("def resume_monitor", text)
+        self.assertIn("def open_log_file", text)
 
     def test_first_run_wizard_auto_open_is_limited_to_unconfigured_users(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
