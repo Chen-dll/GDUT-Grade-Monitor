@@ -58,6 +58,7 @@ from .constants import APP_AUTHOR, APP_VERSION
 from .credentials import CredentialStore, PasswordInputError
 from .diagnostics import create_diagnostics_zip
 from .doctor import overall_ok, run_checks
+from .errors import user_friendly_error_message
 from .gui_model import about_text, doctor_table_rows, filter_grades, grade_analytics, grade_table_rows, help_sections, history_table_rows
 from .gui_model import onboarding_steps, recent_change_rows, semester_options
 from .gui_model import setup_guidance, status_summary
@@ -68,6 +69,7 @@ from .setup_flow import FirstRunSetupResult, run_first_run_setup
 from .storage import AppPaths, load_config, load_state, save_config, set_poll_interval
 from .task import autostart_exists, install_task_or_startup, uninstall_task_and_startup
 from .transcript import TRANSCRIPT_NOTICE, build_transcript_html, write_transcript_html
+from .update_check import GitHubRelease, check_latest_release
 
 
 class _Signals(QObject):
@@ -754,13 +756,16 @@ class GradeMonitorQtApp(QMainWindow):
         open_dir = QPushButton("打开数据目录")
         open_dir.setObjectName("secondaryButton")
         open_dir.clicked.connect(self.open_data_dir)
+        update = QPushButton("检查更新")
+        update.setObjectName("secondaryButton")
+        update.clicked.connect(self.check_for_updates)
         page.layout().addWidget(title)
         page.layout().addWidget(intro)
         page.layout().addWidget(form_card)
         actions_card = _card()
         row = QHBoxLayout(actions_card)
         row.setContentsMargins(14, 12, 14, 12)
-        for button in [save, login, install, uninstall, open_dir]:
+        for button in [save, login, install, uninstall, open_dir, update]:
             row.addWidget(button)
         row.addStretch(1)
         page.layout().addWidget(actions_card)
@@ -862,6 +867,10 @@ class GradeMonitorQtApp(QMainWindow):
         card = _card()
         card_layout = QVBoxLayout(card)
         card_layout.addWidget(body)
+        update = QPushButton("检查更新")
+        update.setObjectName("secondaryButton")
+        update.clicked.connect(self.check_for_updates)
+        card_layout.addWidget(update, 0, Qt.AlignLeft)
         page.layout().addWidget(title)
         page.layout().addWidget(card)
         page.layout().addStretch(1)
@@ -1134,6 +1143,27 @@ class GradeMonitorQtApp(QMainWindow):
     def open_data_dir(self) -> None:
         os.startfile(self.paths.root)
 
+    def check_for_updates(self) -> None:
+        self._run_background(lambda: check_latest_release(APP_VERSION), self._update_check_complete)
+
+    def _update_check_complete(self, release: GitHubRelease) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle("检查更新")
+        box.setIcon(QMessageBox.Information)
+        if release.is_newer:
+            box.setText(f"发现新版本 {release.tag_name}")
+            box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n是否打开下载页面？")
+            open_button = box.addButton("打开下载页", QMessageBox.AcceptRole)
+            box.addButton("稍后", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is open_button:
+                QDesktopServices.openUrl(QUrl(release.url))
+            return
+        box.setText("当前已经是最新版本")
+        box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.tag_name}")
+        box.addButton(QMessageBox.Ok)
+        box.exec()
+
     def export_diagnostics(self) -> None:
         target, _ = QFileDialog.getSaveFileName(
             self,
@@ -1229,10 +1259,8 @@ class GradeMonitorQtApp(QMainWindow):
         def runner() -> None:
             try:
                 signals.success.emit(target())
-            except (PasswordInputError, PlaywrightBrowserMissingError, BrowserFillMismatchError, GradeResponseError) as exc:
-                signals.error.emit(str(exc))
             except Exception as exc:
-                signals.error.emit(f"{type(exc).__name__}: {exc}")
+                signals.error.emit(user_friendly_error_message(exc))
 
         threading.Thread(target=runner, daemon=True).start()
 

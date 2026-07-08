@@ -1,6 +1,6 @@
 #define SourceRoot "..\.."
 #define AppExeName "GDUTGradeMonitor.exe"
-#define AppVersion "0.2.2"
+#define AppVersion "0.2.3"
 
 [Setup]
 AppId={{9D32DEAF-2BA9-4F75-8B4F-6FB6998B8D20}
@@ -39,8 +39,6 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 
 [Files]
 Source: "{#SourceRoot}\dist\GDUTGradeMonitor\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#SourceRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\GDUT 成绩提醒"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"

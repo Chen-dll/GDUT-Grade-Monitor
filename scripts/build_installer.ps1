@@ -69,6 +69,9 @@ try {
   Write-Host ""
   Write-Host "Installer build complete:" -ForegroundColor Green
   Write-Host (Resolve-Path "dist\GDUTGradeMonitor-Setup.exe")
+
+  powershell -ExecutionPolicy Bypass -File "scripts\write_checksums.ps1"
+  Write-Host (Resolve-Path "dist\SHA256SUMS.txt")
 }
 finally {
   Pop-Location

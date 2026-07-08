@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.3 - 2026-07-08
+
+### Added
+
+- Added GUI update checking against the latest GitHub Release.
+- Added release checksum generation for `SHA256SUMS.txt`.
+- Added `PRIVACY.md` documenting local storage, diagnostics redaction, and cleanup steps.
+
+### Changed
+
+- GUI background errors now map common failures to friendlier recovery guidance.
+- Installer packages `PRIVACY.md` with the application files.
+
 ## 0.2.2 - 2026-07-08
 
 ### Fixed

@@ -72,6 +72,10 @@ if (Test-Path -LiteralPath $translationsDir) {
     Remove-Item -Force
 }
 
+Copy-Item -LiteralPath "README.md" -Destination ".\dist\GDUTGradeMonitor\README.md" -Force
+Copy-Item -LiteralPath "PRIVACY.md" -Destination ".\dist\GDUTGradeMonitor\PRIVACY.md" -Force
+Copy-Item -LiteralPath "LICENSE" -Destination ".\dist\GDUTGradeMonitor\LICENSE" -Force
+
 $zipPath = ".\dist\GDUTGradeMonitor-portable.zip"
 if (Test-Path -LiteralPath $zipPath) {
   Remove-Item -LiteralPath $zipPath -Force

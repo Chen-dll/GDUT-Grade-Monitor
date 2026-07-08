@@ -2,7 +2,7 @@
 
 广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
 
-![Version](https://img.shields.io/badge/version-0.2.2-blue)
+![Version](https://img.shields.io/badge/version-0.2.3-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -14,6 +14,7 @@
 
 - `GDUTGradeMonitor-Setup.exe`：安装版，推荐大多数用户使用。
 - `GDUTGradeMonitor-portable.zip`：便携版，解压后双击 `GDUTGradeMonitor.exe` 即可运行。
+- `SHA256SUMS.txt`：安装包和便携包的 SHA256 校验值，用于确认下载文件完整。
 
 Windows 可能提示“未知发布者”，这是因为当前版本还没有代码签名证书。确认来源是本仓库 Release 后再运行。
 
@@ -29,6 +30,7 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 - 可从本地成绩快照导出 PDF/HTML 成绩单，便于个人核对；不会提交学校成绩单申请。
 - 可打开学校网上办事大厅官方成绩单入口，由用户手动查看或下载官方成绩单；工具不会自动提交申请。
 - 登录时会尽量勾选统一认证的“7天/保持登录/免登录”，官方成绩单入口也会优先复用本工具登录时的浏览器登录资料。
+- GUI 提供“检查更新”，可打开 GitHub 最新 Release 下载页。
 - 提供“关于”和“导出诊断包”，方便反馈问题；诊断包会隐藏学号、密码、Cookie 和完整成绩明细。
 - 0.2.0 起默认使用 PySide6/Qt 现代桌面界面，保留旧 Tkinter 界面作为备用入口。
 
@@ -66,6 +68,8 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 6. 回到主界面确认顶部状态显示“后台提醒已准备好”
 
 所有常用操作都可以在 GUI 中完成，不需要打开终端。
+
+下载后如需校验文件完整性，可在 Release 中同时下载 `SHA256SUMS.txt`，用 PowerShell 的 `Get-FileHash` 对比安装包或便携包的 SHA256 值。
 
 如果自启动安装时 Windows 拒绝创建计划任务，程序会自动改用当前用户启动项。
 
@@ -157,8 +161,13 @@ python -m gdut_grade_monitor legacy-gui
 - 查看提醒历史
 - 环境检查
 - 导出诊断包
+- 检查更新
 - 查看版本和只读安全说明
 - 打开本地数据目录
+
+## 隐私说明
+
+隐私和本地数据保存位置见 [PRIVACY.md](PRIVACY.md)。简要来说：密码只保存到 Windows 凭据管理器，Cookie、配置、成绩快照和日志保存在 `%USERPROFILE%\.gdut-grade-monitor`；本工具不会上传这些数据。
 
 ## 配置参数
 
@@ -287,6 +296,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
 dist\GDUTGradeMonitor\GDUTGradeMonitor.exe
 dist\GDUTGradeMonitor-portable.zip
 dist\GDUTGradeMonitor-Setup.exe
+dist\SHA256SUMS.txt
 ```
 
 ## 版本记录
