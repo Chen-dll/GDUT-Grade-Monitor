@@ -1,0 +1,291 @@
+# GDUT Grade Monitor
+
+广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
+
+![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+> 非官方项目。请只在自己的账号上使用，并遵守学校相关规定。本工具的教务数据访问路径有只读 allowlist 限制，不提供评价、保存、删除、更新等会修改教务系统数据的功能。
+
+## 下载
+
+请到 [GitHub Releases](https://github.com/Chen-Dll/GDUT-Grade-Monitor/releases/latest) 下载最新版：
+
+- `GDUTGradeMonitor-Setup.exe`：安装版，推荐大多数用户使用。
+- `GDUTGradeMonitor-portable.zip`：便携版，解压后双击 `GDUTGradeMonitor.exe` 即可运行。
+
+Windows 可能提示“未知发布者”，这是因为当前版本还没有代码签名证书。确认来源是本仓库 Release 后再运行。
+
+## 功能
+
+- 只读查询课程成绩，不调用评价、修改、保存、删除类接口。
+- 首次登录后保存 Cookie；密码保存到 Windows Credential Manager，不写入配置文件。
+- 每 30 分钟默认检查一次，可自定义 1 到 1440 分钟。
+- Windows 通知提醒、提醒历史、成绩表格 GUI。
+- 支持 Windows 登录后自动后台运行；没有任务计划权限时自动使用用户启动项。
+- 提供 `doctor` 环境检查，方便在别人的电脑上排查安装问题。
+- GUI 提供“一键配置本机”：填写学号、密码和检查频率后，自动完成登录、建立基线、安装后台自启动。
+- 可从本地成绩快照导出 PDF/HTML 成绩单，便于个人核对；不会提交学校成绩单申请。
+- 可打开学校网上办事大厅官方成绩单入口，由用户手动查看或下载官方成绩单；工具不会自动提交申请。
+- 提供“关于”和“导出诊断包”，方便反馈问题；诊断包会隐藏学号、密码、Cookie 和完整成绩明细。
+- 0.2.0 起默认使用 PySide6/Qt 现代桌面界面，保留旧 Tkinter 界面作为备用入口。
+
+## 环境要求
+
+- Windows 10/11
+- Python 3.10 或更高版本
+- Chrome 或 Edge 浏览器。没有系统浏览器时，可运行 `python -m playwright install chromium`
+- 能访问广东工业大学统一身份认证和教务系统
+
+## 普通用户下载使用（推荐）
+
+发布时会提供两种文件：
+
+- 安装版：`GDUTGradeMonitor-Setup.exe`，推荐普通用户下载。
+- 便携版：`GDUTGradeMonitor-portable.zip`，适合临时测试或不想安装时解压运行。
+
+如果使用安装版，普通用户只需要：
+
+1. 下载并运行 `GDUTGradeMonitor-Setup.exe`
+2. 按安装向导选择安装路径，可选创建桌面快捷方式
+3. 安装完成后勾选“启动 GDUT 成绩提醒”
+4. 点击主界面的“一键配置本机”
+5. 输入学号、密码，确认检查频率和“开启登录自启动”
+6. 按弹出的浏览器完成统一身份认证（如果需要验证码或二次验证）
+7. 回到主界面确认顶部状态显示“后台提醒已准备好”
+
+如果使用便携版 `GDUTGradeMonitor-portable.zip`，则只需要：
+
+1. 下载并解压 `GDUTGradeMonitor-portable.zip`
+2. 双击解压目录里的 `GDUTGradeMonitor.exe`
+3. 点击主界面的“一键配置本机”
+4. 输入学号、密码，确认检查频率和“开启登录自启动”
+5. 按弹出的浏览器完成统一身份认证（如果需要验证码或二次验证）
+6. 回到主界面确认顶部状态显示“后台提醒已准备好”
+
+所有常用操作都可以在 GUI 中完成，不需要打开终端。
+
+如果自启动安装时 Windows 拒绝创建计划任务，程序会自动改用当前用户启动项。
+
+首次配置只会建立成绩基线，不会对已有成绩弹通知。之后发现新成绩或成绩变化才会提醒。
+
+## 从源码安装
+
+从 GitHub 下载 ZIP 或 clone 项目后，在项目目录运行：
+
+```powershell
+python -m pip install .
+python -m gdut_grade_monitor doctor
+```
+
+如果是开发/修改源码，使用 editable 安装：
+
+```powershell
+python -m pip install -e .
+```
+
+也可以用一键安装脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
+
+脚本会安装依赖、运行环境检查，然后打开 GUI。后续配置仍在 GUI 里点击“一键配置本机”完成。
+
+## 首次配置
+
+运行：
+
+```powershell
+python -m gdut_grade_monitor setup
+```
+
+按提示输入学号和密码。注意：
+
+- 密码输入时不会显示，这是正常的。
+- 请切换到英文输入法；程序会阻止中文/全角字符密码被保存。
+- 如果浏览器弹出登录页，请完成登录。
+
+完成后先手动检查一次：
+
+```powershell
+python -m gdut_grade_monitor check --json
+python -m gdut_grade_monitor monitor --once
+```
+
+## 开启后台提醒
+
+```powershell
+python -m gdut_grade_monitor task install
+python -m gdut_grade_monitor task status
+```
+
+如果 Windows 拒绝创建计划任务，程序会自动安装到当前用户启动文件夹。登录 Windows 后会在后台运行。
+
+取消自启动：
+
+```powershell
+python -m gdut_grade_monitor task uninstall
+```
+
+## GUI 界面
+
+```powershell
+python -m gdut_grade_monitor gui
+```
+
+默认打开 Qt 版现代界面。旧版 Tkinter 界面仍可作为备用入口：
+
+```powershell
+python -m gdut_grade_monitor legacy-gui
+```
+
+双击 exe 或运行 GUI 后支持：
+
+- 一键配置本机
+- 查看成绩列表
+- 导出本地成绩单
+- 打开官方成绩单入口
+- 立即检查
+- 登录/初始化
+- 安装/取消自启动
+- 修改查询频率
+- 查看提醒历史
+- 环境检查
+- 导出诊断包
+- 查看版本和只读安全说明
+- 打开本地数据目录
+
+## 配置参数
+
+查看配置：
+
+```powershell
+python -m gdut_grade_monitor config show
+```
+
+修改查询频率，例如 10 分钟：
+
+```powershell
+python -m gdut_grade_monitor config interval 10
+```
+
+配置文件位置：
+
+```text
+%USERPROFILE%\.gdut-grade-monitor\config.json
+```
+
+敏感信息不会写入配置文件。密码保存在 Windows Credential Manager，Cookie 保存在用户目录。
+
+## 环境检查
+
+```powershell
+python -m gdut_grade_monitor doctor
+```
+
+它会检查：
+
+- Python 版本
+- Windows 平台
+- 依赖包是否安装
+- Chrome/Edge 或 Playwright 浏览器是否可用
+- 数据目录是否可写
+- 是否已配置学号
+- 自启动是否已安装
+
+## 反馈问题
+
+如果发给别人后运行失败，可以让对方在 GUI 的“环境检查”页点击“导出诊断包”，或通过菜单“文件 → 导出诊断包...”导出 zip。
+
+诊断包用于排查环境和运行状态，会自动隐藏：
+
+- 完整学号
+- 密码
+- Cookie / token / secret
+- 完整成绩明细和课程名称
+
+也可以用命令行导出：
+
+```powershell
+python -m gdut_grade_monitor diagnostics export --output support.zip
+```
+
+## 常用命令
+
+```powershell
+python -m gdut_grade_monitor doctor
+python -m gdut_grade_monitor setup
+python -m gdut_grade_monitor check --json
+python -m gdut_grade_monitor monitor --once
+python -m gdut_grade_monitor monitor
+python -m gdut_grade_monitor gui
+python -m gdut_grade_monitor config show
+python -m gdut_grade_monitor config interval 30
+python -m gdut_grade_monitor task install
+python -m gdut_grade_monitor task status
+python -m gdut_grade_monitor task uninstall
+```
+
+安装后如果 `gdut-grade` 在 PATH 中，也可以把 `python -m gdut_grade_monitor` 替换为：
+
+```powershell
+gdut-grade
+```
+
+## 安全边界
+
+教务系统数据请求经过 allowlist 限制，目前只允许：
+
+- `GET /login!welcome.action`
+- `POST /xskccjxx!getDataList.action`
+
+登录过程只用于获取会话。成绩查询失败时，如果教务系统返回 HTML 错误页，程序会报友好错误，而不是继续解析。
+
+## 卸载
+
+```powershell
+python -m gdut_grade_monitor task uninstall
+python -m pip uninstall gdut-grade-monitor
+```
+
+如需删除本地状态文件，可手动删除：
+
+```text
+%USERPROFILE%\.gdut-grade-monitor
+```
+
+## 给维护者
+
+发布前运行：
+
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall gdut_grade_monitor tests
+python -m gdut_grade_monitor doctor
+```
+
+构建 Windows GUI 应用目录和便携 zip：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
+```
+
+构建传统安装包需要先安装 Inno Setup，然后运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
+```
+
+构建产物：
+
+```text
+dist\GDUTGradeMonitor\GDUTGradeMonitor.exe
+dist\GDUTGradeMonitor-portable.zip
+dist\GDUTGradeMonitor-Setup.exe
+```
+
+## 版本记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

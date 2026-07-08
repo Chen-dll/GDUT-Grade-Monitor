@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gdut-grade-monitor"
+version = "0.2.0"
+description = "Read-only GDUT grade monitor with Windows notifications."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Chen-Dll" }]
+license = { text = "MIT" }
+keywords = ["gdut", "grades", "monitor", "windows", "notification"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Win32 (MS Windows)",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "click>=8.0",
+  "keyring>=25.0",
+  "playwright>=1.40",
+  "PySide6>=6.7",
+  "requests>=2.28",
+  "winotify>=1.1",
+]
+
+[project.optional-dependencies]
+build = [
+  "pyinstaller>=6.0",
+]
+
+[project.scripts]
+gdut-grade = "gdut_grade_monitor.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Chen-Dll/GDUT-Grade-Monitor"
+Repository = "https://github.com/Chen-Dll/GDUT-Grade-Monitor"
+Issues = "https://github.com/Chen-Dll/GDUT-Grade-Monitor/issues"
+
+[tool.setuptools.packages.find]
+include = ["gdut_grade_monitor*"]
+
+[tool.setuptools.package-data]
+gdut_grade_monitor = ["assets/*.ico"]
