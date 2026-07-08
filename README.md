@@ -2,7 +2,7 @@
 
 广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
 
-![Version](https://img.shields.io/badge/version-0.2.1-blue)
+![Version](https://img.shields.io/badge/version-0.2.2-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -68,6 +68,8 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 所有常用操作都可以在 GUI 中完成，不需要打开终端。
 
 如果自启动安装时 Windows 拒绝创建计划任务，程序会自动改用当前用户启动项。
+
+安装路径可以选择一个还不存在的新文件夹；只要路径格式正确并且你有权限写入，安装程序会自动创建它。
 
 首次配置只会建立成绩基线，不会对已有成绩弹通知。之后发现新成绩或成绩变化才会提醒。
 

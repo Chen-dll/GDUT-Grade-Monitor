@@ -25,6 +25,18 @@ class InstallerPackagingTests(unittest.TestCase):
         self.assertIn('Name: "{autodesktop}\\GDUT 成绩提醒"', text)
         self.assertIn("Flags: nowait postinstall skipifsilent", text)
 
+    def test_inno_setup_validates_and_creates_custom_install_directory(self):
+        text = Path("packaging/installer/GDUTGradeMonitor.iss").read_text(encoding="utf-8")
+
+        self.assertIn("[Code]", text)
+        self.assertIn("function NextButtonClick(CurPageID: Integer): Boolean;", text)
+        self.assertIn("wpSelectDir", text)
+        self.assertIn("ValidateInstallDir", text)
+        self.assertIn("ForceDirectories", text)
+        self.assertIn("目录不存在，安装程序将自动创建", text)
+        self.assertIn("安装路径格式不正确", text)
+        self.assertIn("ContainsInvalidPathChars", text)
+
     def test_installer_uses_local_chinese_language_file(self):
         script = Path("packaging/installer/GDUTGradeMonitor.iss").read_text(encoding="utf-8")
         language = Path("packaging/installer/ChineseSimplified.isl").read_text(encoding="utf-8")

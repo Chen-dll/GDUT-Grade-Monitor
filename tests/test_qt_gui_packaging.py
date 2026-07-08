@@ -127,6 +127,7 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertNotIn("--collect-submodules PySide6", text)
         self.assertNotIn("--collect-submodules keyring.backends", text)
         self.assertIn("--hidden-import keyring.backends.Windows", text)
+        self.assertIn("--hidden-import win32timezone", text)
         self.assertIn("--hidden-import PySide6.QtCore", text)
         self.assertIn("--hidden-import PySide6.QtGui", text)
         self.assertIn("--hidden-import PySide6.QtPrintSupport", text)

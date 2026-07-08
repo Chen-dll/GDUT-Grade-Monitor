@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 - 2026-07-08
+
+### Fixed
+
+- The installer now validates the selected install path before installation and creates a missing target directory when the path is valid.
+- Packaged exe builds now include `win32timezone`, fixing startup failures from pywin32 dynamic imports.
+
 ## 0.2.1 - 2026-07-08
 
 ### Added

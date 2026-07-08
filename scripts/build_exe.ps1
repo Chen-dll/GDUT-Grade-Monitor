@@ -18,6 +18,7 @@ python -m PyInstaller `
   --icon gdut_grade_monitor\assets\icon.ico `
   --add-data "gdut_grade_monitor\assets\icon.ico;gdut_grade_monitor\assets" `
   --hidden-import keyring.backends.Windows `
+  --hidden-import win32timezone `
   --hidden-import PySide6.QtCore `
   --hidden-import PySide6.QtGui `
   --hidden-import PySide6.QtPrintSupport `
