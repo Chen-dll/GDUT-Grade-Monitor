@@ -4,7 +4,7 @@ import json
 
 import requests
 
-from .auth import BrowserFillMismatchError, PlaywrightBrowserMissingError, SessionExpiredError
+from .auth import BrowserFillMismatchError, BrowserLaunchError, PlaywrightBrowserMissingError, SessionExpiredError
 from .client import GradeResponseError
 from .credentials import PasswordInputError
 from .update_check import UpdateCheckError
@@ -15,6 +15,12 @@ def user_friendly_error_message(exc: Exception) -> str:
         return (
             "登录填写时检测到密码框内容和保存的密码不一致。\n\n"
             "请把输入法切换到英文/半角后，在设置页点击“重新登录/初始化”再试。"
+        )
+    if isinstance(exc, BrowserLaunchError):
+        return (
+            "登录浏览器启动失败。\n\n"
+            "请先关闭本工具打开的 Chrome/Edge 登录窗口和官方成绩单页面，然后重试“重新登录/初始化”。\n"
+            "如果仍失败，请重启电脑后再试。"
         )
     if isinstance(exc, PasswordInputError):
         return f"密码输入看起来不正确：{exc}\n\n请切换到英文/半角输入法后重新填写。"

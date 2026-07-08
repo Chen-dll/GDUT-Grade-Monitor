@@ -43,6 +43,10 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("保存这些抬头信息", text)
         self.assertIn("导出成绩单", text)
         self.assertIn("官方成绩单", text)
+        self.assertIn("class GradeDetailDialog", text)
+        self.assertIn("课程成绩详情", text)
+        self.assertIn("cellDoubleClicked.connect(self.show_grade_detail)", text)
+        self.assertIn("visible_grades", text)
         self.assertIn("def open_official_transcript_portal", text)
         self.assertIn("QDesktopServices.openUrl", text)
         self.assertIn("official_transcript_guidance", text)
@@ -52,11 +56,19 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("平均绩点: {value:.2f}", text)
         self.assertIn("def _set_recent_changes", text)
         self.assertIn("recentRow", text)
+        self.assertIn("recentScroll", text)
+        self.assertIn("最近变化 · {len(recent)} 条", text)
+        self.assertIn("recent_change_rows(state, limit=20)", text)
+        self.assertIn("setWidgetResizable(True)", text)
+        self.assertIn("Qt.ScrollBarAsNeeded", text)
+        self.assertIn("拖动右侧滚动条", text)
         self.assertIn("scoreBadge", text)
         self.assertIn("QSystemTrayIcon", text)
         self.assertIn("QTimer.singleShot", text)
         self.assertIn("class FirstRunWizardDialog", text)
         self.assertIn("wizardRail", text)
+        self.assertIn("wizardPageScroll", text)
+        self.assertIn("wizardPageContent", text)
         self.assertIn("wizardStepActive", text)
         self.assertIn("wizardStepDone", text)
         self.assertIn("def maybe_show_first_run_wizard", text)
@@ -81,6 +93,8 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("查看帮助", text)
         self.assertIn("新手向导", text)
         self.assertIn("关于", text)
+        self.assertIn("aboutScroll", text)
+        self.assertIn("aboutContent", text)
         self.assertIn("status_center_rows", text)
         self.assertIn("运行状态中心", text)
         self.assertIn("def _set_status_center", text)
@@ -92,6 +106,11 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("def pause_monitor_for_one_hour", text)
         self.assertIn("def resume_monitor", text)
         self.assertIn("def open_log_file", text)
+        self.assertIn("QProgressDialog", text)
+        self.assertIn("正在检查本机环境", text)
+        self.assertIn("正在只读读取成绩并建立本地基线", text)
+        self.assertIn("summaryNumber", text)
+        self.assertIn("summaryBadge", text)
 
     def test_first_run_wizard_auto_open_is_limited_to_unconfigured_users(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
@@ -117,6 +136,17 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("self._set_page(0)", complete_block)
         self.assertIn("现在已经可以后台提醒了", complete_block)
         self.assertIn("首次配置已完成", complete_block)
+
+    def test_dashboard_keeps_first_run_guide_out_of_main_overview(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        dashboard_block = text.split("def _dashboard_page", 1)[1].split("def _runtime_status_card", 1)[0]
+
+        self.assertNotIn("_onboarding_card()", dashboard_block)
+        self.assertIn("_runtime_status_card()", dashboard_block)
+        self.assertIn("打开数据目录", dashboard_block)
+        self.assertNotIn("导出诊断包", dashboard_block)
+        self.assertNotIn("安装自启动", dashboard_block)
+        self.assertIn("status_center_rows(config, state, installed)[:3]", text)
 
     def test_single_instance_lock_blocks_second_owner(self):
         from gdut_grade_monitor.qt_gui import _acquire_single_instance_lock

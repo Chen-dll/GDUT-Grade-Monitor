@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -39,6 +40,14 @@ class BrowserFillMismatchError(RuntimeError):
         )
 
 
+class BrowserLaunchError(RuntimeError):
+    def __init__(self):
+        super().__init__(
+            "无法启动用于登录的浏览器。请先关闭本工具打开的 Chrome/Edge 登录窗口，"
+            "然后在设置页点击“重新登录/初始化”再试；如果仍失败，请重启电脑后重试。"
+        )
+
+
 class AuthManager:
     def __init__(self, paths: AppPaths, base_url: str = DEFAULT_BASE_URL):
         self.paths = paths
@@ -61,7 +70,7 @@ class AuthManager:
             raise RuntimeError("playwright is required for login. Run: playwright install chromium") from exc
 
         self.paths.ensure()
-        user_data_dir = str(self.login_browser_data_dir)
+        cleanup_dir: Path | None = None
         with sync_playwright() as p:
             launch_options = {
                 "headless": False,
@@ -69,20 +78,7 @@ class AuthManager:
                 "ignore_https_errors": True,
                 "args": ["--start-maximized", "--disable-blink-features=AutomationControlled"],
             }
-            try:
-                context = p.chromium.launch_persistent_context(user_data_dir=user_data_dir, **launch_options)
-            except Exception as exc:
-                if _is_missing_browser_error(exc):
-                    system_browser = find_system_browser()
-                    if not system_browser:
-                        raise PlaywrightBrowserMissingError() from exc
-                    context = p.chromium.launch_persistent_context(
-                        user_data_dir=user_data_dir,
-                        executable_path=system_browser,
-                        **launch_options,
-                    )
-                else:
-                    raise
+            context, cleanup_dir = self._launch_login_context(p, launch_options)
             page = context.pages[0] if context.pages else context.new_page()
             context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
             page.goto(CAS_LOGIN_URL, wait_until="domcontentloaded")
@@ -97,14 +93,44 @@ class AuthManager:
             self._save_cookies(cookies)
             time.sleep(1)
             context.close()
+            if cleanup_dir:
+                shutil.rmtree(cleanup_dir, ignore_errors=True)
         session = self._build_session(cookies)
         if not self.is_logged_in(session):
             raise SessionExpiredError("Login completed but session validation failed.")
         return session
 
+    def _launch_login_context(self, playwright, launch_options: dict):
+        primary_dir = self.login_browser_data_dir
+        errors = []
+        for user_data_dir, cleanup in [(primary_dir, None), (self._temporary_login_browser_data_dir(), "remove")]:
+            user_data_dir.mkdir(parents=True, exist_ok=True)
+            for executable_path in [None, *find_system_browsers()]:
+                try:
+                    kwargs = dict(launch_options)
+                    if executable_path:
+                        kwargs["executable_path"] = executable_path
+                    context = playwright.chromium.launch_persistent_context(
+                        user_data_dir=str(user_data_dir),
+                        **kwargs,
+                    )
+                    return context, user_data_dir if cleanup else None
+                except Exception as exc:
+                    errors.append(exc)
+                    if _is_missing_browser_error(exc) and executable_path is None:
+                        continue
+                    continue
+
+        if errors and all(_is_missing_browser_error(error) for error in errors):
+            raise PlaywrightBrowserMissingError() from errors[-1]
+        raise BrowserLaunchError() from (errors[-1] if errors else None)
+
     @property
     def login_browser_data_dir(self) -> Path:
         return self.paths.root / "browser_data"
+
+    def _temporary_login_browser_data_dir(self) -> Path:
+        return self.paths.root / f"browser_login_tmp_{int(time.time() * 1000)}"
 
     def open_url_with_login_profile(self, url: str) -> bool:
         self.paths.ensure()
@@ -234,6 +260,11 @@ def _is_missing_browser_error(exc: Exception) -> bool:
 
 
 def find_system_browser(candidates: list[str | Path] | None = None) -> str | None:
+    browsers = find_system_browsers(candidates)
+    return browsers[0] if browsers else None
+
+
+def find_system_browsers(candidates: list[str | Path] | None = None) -> list[str]:
     if candidates is None:
         program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
         program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
@@ -246,8 +277,11 @@ def find_system_browser(candidates: list[str | Path] | None = None) -> str | Non
             Path(local_app_data) / "Google" / "Chrome" / "Application" / "chrome.exe",
             Path(local_app_data) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
         ]
+    browsers = []
     for candidate in candidates:
         path = Path(candidate)
         if path.exists():
-            return str(path)
-    return None
+            value = str(path)
+            if value not in browsers:
+                browsers.append(value)
+    return browsers

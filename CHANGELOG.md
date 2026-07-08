@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.8 - 2026-07-08
+
+### Added
+
+- Added a course detail dialog from the grade table so users can inspect normalized fields and original grade payload fields without leaving the GUI.
+- Added setup/re-login progress hints during one-click setup so long browser/login steps no longer feel frozen.
+
+### Changed
+
+- Removed the dashboard first-run guide card from the main overview because it duplicated the first-launch wizard and made the page feel crowded after setup.
+- Expanded the runtime status center tiles so status values remain readable instead of collapsing into thin placeholder lines.
+- Reduced duplicate dashboard information by showing only the three key runtime cards, simplifying local configuration metrics, and keeping only the most common quick actions on the overview.
+- Made scroll-heavy areas, including the first-run wizard, About page, and recent changes card, easier to read when content grows.
+
+### Fixed
+
+- Login now falls back across the managed profile, a temporary login profile, bundled Playwright Chromium, and detected Chrome/Edge installations before reporting browser startup failure.
+- Browser startup failures now show a concise Chinese recovery message instead of raw Playwright logs.
+
 ## 0.2.7 - 2026-07-08
 
 ### Added

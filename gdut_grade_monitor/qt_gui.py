@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -203,7 +204,14 @@ class FirstRunWizardDialog(QDialog):
         self._refresh_buttons()
 
     def _page_widget(self, page: dict[str, object]) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setObjectName("wizardPageScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
         widget = QWidget()
+        widget.setObjectName("wizardPageContent")
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
@@ -233,7 +241,8 @@ class FirstRunWizardDialog(QDialog):
             layout.addWidget(row)
 
         layout.addStretch(1)
-        return widget
+        scroll.setWidget(widget)
+        return scroll
 
     def _back(self) -> None:
         self.stack.setCurrentIndex(max(0, self.stack.currentIndex() - 1))
@@ -301,6 +310,89 @@ class TranscriptExportDialog(QDialog):
 
     def profile(self) -> dict[str, str]:
         return {key: field.text().strip() for key, field in self.inputs.items()}
+
+
+class GradeDetailDialog(QDialog):
+    def __init__(self, parent: QWidget, grade: dict):
+        super().__init__(parent)
+        self.setWindowTitle("课程成绩详情")
+        self.setModal(True)
+        self.setMinimumSize(560, 440)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(14)
+
+        title = QLabel(str(grade.get("course_name") or "未命名课程"))
+        title.setObjectName("detailTitle")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        fields = [
+            ("学期", grade.get("semester", "")),
+            ("课程代码", grade.get("course_code", "")),
+            ("成绩", grade.get("score", "")),
+            ("学分", grade.get("credit", "")),
+            ("绩点", grade_table_rows([grade])[0][4]),
+        ]
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(10)
+        for row, (label, value) in enumerate(fields):
+            name = QLabel(label)
+            name.setObjectName("detailLabel")
+            data = QLabel(str(value or "暂无"))
+            data.setObjectName("detailValue")
+            data.setWordWrap(True)
+            grid.addWidget(name, row, 0)
+            grid.addWidget(data, row, 1)
+        grid.setColumnStretch(1, 1)
+        layout.addLayout(grid)
+
+        raw_title = QLabel("原始字段")
+        raw_title.setObjectName("cardTitle")
+        layout.addWidget(raw_title)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("gradeDetailScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        raw_content = QWidget()
+        raw_content.setObjectName("gradeDetailContent")
+        raw_layout = QVBoxLayout(raw_content)
+        raw_layout.setContentsMargins(0, 0, 8, 0)
+        raw_layout.setSpacing(8)
+
+        raw = grade.get("raw", {})
+        if isinstance(raw, dict) and raw:
+            for key in sorted(raw, key=str):
+                row_frame = QFrame()
+                row_frame.setObjectName("detailRawRow")
+                row_layout = QHBoxLayout(row_frame)
+                row_layout.setContentsMargins(12, 9, 12, 9)
+                key_label = QLabel(str(key))
+                key_label.setObjectName("detailLabel")
+                key_label.setMinimumWidth(128)
+                value_label = QLabel(str(raw.get(key, "")))
+                value_label.setObjectName("detailValue")
+                value_label.setWordWrap(True)
+                row_layout.addWidget(key_label, 0, Qt.AlignTop)
+                row_layout.addWidget(value_label, 1)
+                raw_layout.addWidget(row_frame)
+        else:
+            empty = QLabel("暂无原始字段。")
+            empty.setObjectName("muted")
+            raw_layout.addWidget(empty)
+        raw_layout.addStretch(1)
+        scroll.setWidget(raw_content)
+        layout.addWidget(scroll, 1)
+
+        buttons = QDialogButtonBox()
+        close_button = buttons.addButton("关闭", QDialogButtonBox.RejectRole)
+        close_button.setObjectName("primaryButton")
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
 
 class TrendChart(QFrame):
@@ -539,6 +631,9 @@ class GradeMonitorQtApp(QMainWindow):
         self.paths.ensure()
         self._signals: list[_Signals] = []
         self._last_guidance_action = "一键配置本机"
+        self._setup_progress: QProgressDialog | None = None
+        self._setup_progress_timer: QTimer | None = None
+        self._setup_progress_index = 0
         self.setWindowTitle(f"GDUT 成绩提醒 v{APP_VERSION}")
         self.setWindowIcon(QIcon(str(app_icon_path())))
         self.setMinimumSize(1060, 640)
@@ -647,21 +742,26 @@ class GradeMonitorQtApp(QMainWindow):
         self.status_label.setObjectName("muted")
 
         top = QHBoxLayout()
+        top.setSpacing(16)
         heading = QVBoxLayout()
+        heading.setSpacing(6)
         heading.addWidget(title)
         heading.addWidget(self.status_label)
         top.addLayout(heading, 1)
         check = QPushButton("立即检查")
         check.setObjectName("primaryButton")
+        check.setFixedHeight(44)
         check.clicked.connect(self.check_now)
-        top.addWidget(check)
+        top.addWidget(check, 0, Qt.AlignTop)
         page.layout().addLayout(top)
 
         self.status_panel = QFrame()
         self.status_panel.setObjectName("statusPanel")
         status_layout = QHBoxLayout(self.status_panel)
         status_layout.setContentsMargins(24, 22, 24, 22)
+        status_layout.setSpacing(18)
         main_status = QVBoxLayout()
+        main_status.setSpacing(4)
         status_eyebrow = QLabel("当前状态")
         status_eyebrow.setObjectName("statusEyebrow")
         self.guidance_title = QLabel("正在检查状态...")
@@ -675,51 +775,72 @@ class GradeMonitorQtApp(QMainWindow):
         status_layout.addLayout(main_status, 1)
         next_box = QFrame()
         next_box.setObjectName("nextBox")
+        next_box.setFixedWidth(186)
         next_layout = QVBoxLayout(next_box)
+        next_layout.setContentsMargins(16, 14, 16, 14)
+        next_layout.setSpacing(4)
         next_label = QLabel("下一次检查")
         next_label.setObjectName("nextLabel")
         self.next_check_label = QLabel("按设置频率")
         self.next_check_label.setObjectName("nextValue")
         next_layout.addWidget(next_label)
         next_layout.addWidget(self.next_check_label)
-        status_layout.addWidget(next_box)
+        status_layout.addWidget(next_box, 0, Qt.AlignVCenter)
         page.layout().addWidget(self.status_panel)
-        page.layout().addWidget(self._onboarding_card())
         page.layout().addWidget(self._runtime_status_card())
 
         middle = QHBoxLayout()
+        middle.setSpacing(16)
         self.recent_card = _card()
+        self.recent_card.setMinimumHeight(166)
         recent_layout = QVBoxLayout(self.recent_card)
         recent_layout.setContentsMargins(18, 18, 18, 18)
         recent_layout.setSpacing(12)
-        recent_title = QLabel("最近变化")
-        recent_title.setObjectName("cardTitle")
-        recent_layout.addWidget(recent_title)
-        self.recent_list = QVBoxLayout()
+        self.recent_title = QLabel("最近变化")
+        self.recent_title.setObjectName("cardTitle")
+        recent_layout.addWidget(self.recent_title)
+        self.recent_scroll = QScrollArea()
+        self.recent_scroll.setObjectName("recentScroll")
+        self.recent_scroll.setWidgetResizable(True)
+        self.recent_scroll.setFrameShape(QFrame.NoFrame)
+        self.recent_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.recent_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.recent_scroll.setToolTip("有多条变化时，可拖动右侧滚动条查看更多。")
+        self.recent_content = QWidget()
+        self.recent_content.setObjectName("recentContent")
+        self.recent_list = QVBoxLayout(self.recent_content)
+        self.recent_list.setContentsMargins(0, 0, 8, 0)
         self.recent_list.setSpacing(8)
-        recent_layout.addLayout(self.recent_list)
-        recent_layout.addStretch(1)
+        self.recent_scroll.setWidget(self.recent_content)
+        recent_layout.addWidget(self.recent_scroll, 1)
         middle.addWidget(self.recent_card, 6)
 
         self.config_card = _card()
+        self.config_card.setMinimumHeight(166)
         config_layout = QVBoxLayout(self.config_card)
+        config_layout.setContentsMargins(18, 18, 18, 18)
+        config_layout.setSpacing(12)
         config_title = QLabel("本机配置")
         config_title.setObjectName("cardTitle")
         config_layout.addWidget(config_title)
-        self.summary_grid = QGridLayout()
+        self.summary_area = QWidget()
+        self.summary_area.setFixedHeight(76)
+        self.summary_grid = QGridLayout(self.summary_area)
         self.summary_grid.setHorizontalSpacing(18)
         self.summary_grid.setVerticalSpacing(12)
-        config_layout.addLayout(self.summary_grid)
+        self.summary_grid.setContentsMargins(0, 2, 0, 0)
+        config_layout.addWidget(self.summary_area)
+        config_layout.addStretch(1)
         middle.addWidget(self.config_card, 5)
         page.layout().addLayout(middle)
 
         actions_card = _card()
         actions = QHBoxLayout(actions_card)
+        actions.setContentsMargins(16, 14, 16, 14)
+        actions.setSpacing(10)
         for label, callback, secondary in [
             ("一键配置本机", self.one_click_setup, False),
             ("新手向导", self.open_first_run_wizard, True),
-            ("导出诊断包", self.export_diagnostics, True),
-            ("安装自启动", self.install_startup, True),
             ("打开数据目录", self.open_data_dir, True),
         ]:
             button = QPushButton(label)
@@ -732,18 +853,24 @@ class GradeMonitorQtApp(QMainWindow):
         return page
 
     def _runtime_status_card(self) -> QWidget:
-        card = _card()
-        card.setObjectName("runtimeCard")
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 18, 18, 18)
+        self.runtime_status_card = _card()
+        self.runtime_status_card.setObjectName("runtimeCard")
+        self.runtime_status_card.setMinimumHeight(190)
+        layout = QVBoxLayout(self.runtime_status_card)
+        layout.setContentsMargins(20, 18, 20, 20)
         layout.setSpacing(12)
 
         top = QHBoxLayout()
+        top.setSpacing(12)
         title = QLabel("运行状态中心")
         title.setObjectName("cardTitle")
         hint = QLabel("看后台是否在查、下次什么时候查、最近有没有错误。")
         hint.setObjectName("muted")
         hint.setWordWrap(True)
+        header_text = QVBoxLayout()
+        header_text.setSpacing(4)
+        header_text.addWidget(title)
+        header_text.addWidget(hint)
         pause_button = QPushButton("暂停 1 小时")
         pause_button.setObjectName("secondaryButton")
         pause_button.clicked.connect(self.pause_monitor_for_one_hour)
@@ -753,18 +880,21 @@ class GradeMonitorQtApp(QMainWindow):
         log_button = QPushButton("查看日志")
         log_button.setObjectName("secondaryButton")
         log_button.clicked.connect(self.open_log_file)
-        top.addWidget(title)
-        top.addWidget(hint, 1)
-        top.addWidget(pause_button)
-        top.addWidget(resume_button)
-        top.addWidget(log_button)
+        for button in [pause_button, resume_button, log_button]:
+            button.setFixedHeight(36)
+            button.setMinimumWidth(88)
+        top.addLayout(header_text, 1)
+        top.addWidget(pause_button, 0, Qt.AlignTop)
+        top.addWidget(resume_button, 0, Qt.AlignTop)
+        top.addWidget(log_button, 0, Qt.AlignTop)
         layout.addLayout(top)
 
         self.status_center_grid = QGridLayout()
         self.status_center_grid.setHorizontalSpacing(10)
         self.status_center_grid.setVerticalSpacing(10)
+        self.status_center_grid.setContentsMargins(0, 2, 0, 0)
         layout.addLayout(self.status_center_grid)
-        return card
+        return self.runtime_status_card
 
     def _onboarding_card(self) -> QWidget:
         card = _card()
@@ -828,6 +958,8 @@ class GradeMonitorQtApp(QMainWindow):
         ]:
             card = _card()
             layout = QVBoxLayout(card)
+            layout.setContentsMargins(18, 16, 18, 16)
+            layout.setSpacing(6)
             name = QLabel(label)
             name.setObjectName("muted")
             value_label.setObjectName("largeMetric")
@@ -838,6 +970,8 @@ class GradeMonitorQtApp(QMainWindow):
         charts = QHBoxLayout()
         trend_card = _card()
         trend_layout = QVBoxLayout(trend_card)
+        trend_layout.setContentsMargins(18, 16, 18, 16)
+        trend_layout.setSpacing(10)
         trend_title = QLabel("平均绩点变化")
         trend_title.setObjectName("cardTitle")
         self.trend_chart = TrendChart()
@@ -847,6 +981,8 @@ class GradeMonitorQtApp(QMainWindow):
 
         distribution_card = _card()
         distribution_layout = QVBoxLayout(distribution_card)
+        distribution_layout.setContentsMargins(18, 16, 18, 16)
+        distribution_layout.setSpacing(10)
         distribution_title = QLabel("绩点分布")
         distribution_title.setObjectName("cardTitle")
         self.distribution_chart = DistributionChart()
@@ -881,6 +1017,8 @@ class GradeMonitorQtApp(QMainWindow):
         self.grades_table.setHorizontalHeaderLabels(["学期", "课程", "成绩", "学分", "绩点"])
         self._prepare_table(self.grades_table)
         self.grades_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.visible_grades: list[dict] = []
+        self.grades_table.cellDoubleClicked.connect(self.show_grade_detail)
         page.layout().addWidget(title)
         page.layout().addWidget(subtitle)
         page.layout().addWidget(self.grade_stats_note)
@@ -940,18 +1078,51 @@ class GradeMonitorQtApp(QMainWindow):
         update = QPushButton("检查更新")
         update.setObjectName("secondaryButton")
         update.clicked.connect(self.check_for_updates)
+
+        for button in [save, login, install, uninstall, open_dir, update]:
+            button.setMinimumWidth(108)
+
         page.layout().addWidget(title)
         page.layout().addWidget(intro)
-        page.layout().addWidget(form_card)
-        actions_card = _card()
-        row = QHBoxLayout(actions_card)
-        row.setContentsMargins(14, 12, 14, 12)
-        for button in [save, login, install, uninstall, open_dir, update]:
-            row.addWidget(button)
-        row.addStretch(1)
-        page.layout().addWidget(actions_card)
+
+        settings_grid = QGridLayout()
+        settings_grid.setHorizontalSpacing(14)
+        settings_grid.setVerticalSpacing(14)
+        settings_grid.addWidget(form_card, 0, 0)
+        settings_grid.addWidget(self._settings_action_card("账号", "重新登录或初始化本机配置。", [login]), 0, 1)
+        settings_grid.addWidget(self._settings_action_card("后台启动", "控制 Windows 登录后是否自动检查成绩。", [install, uninstall]), 1, 0)
+        settings_grid.addWidget(self._settings_action_card("数据与更新", "打开本地数据目录，或检查 GitHub 新版本。", [open_dir, update]), 1, 1)
+        settings_grid.setColumnStretch(0, 1)
+        settings_grid.setColumnStretch(1, 1)
+        form_actions = QHBoxLayout()
+        form_actions.addWidget(save)
+        form_actions.addStretch(1)
+        form.addRow("", form_actions)
+        page.layout().addLayout(settings_grid)
         page.layout().addStretch(1)
         return page
+
+    def _settings_action_card(self, title: str, body: str, buttons: list[QPushButton]) -> QFrame:
+        card = _card()
+        card.setMinimumHeight(132)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        heading = QLabel(title)
+        heading.setObjectName("cardTitle")
+        detail = QLabel(body)
+        detail.setObjectName("muted")
+        detail.setWordWrap(True)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        for button in buttons:
+            actions.addWidget(button)
+        actions.addStretch(1)
+        layout.addWidget(heading)
+        layout.addWidget(detail)
+        layout.addStretch(1)
+        layout.addLayout(actions)
+        return card
 
     def _doctor_page(self) -> QWidget:
         page = _page()
@@ -1054,14 +1225,29 @@ class GradeMonitorQtApp(QMainWindow):
         body.setObjectName("aboutBody")
         card = _card()
         card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 18, 20, 18)
+        card_layout.setSpacing(12)
         card_layout.addWidget(body)
         update = QPushButton("检查更新")
         update.setObjectName("secondaryButton")
         update.clicked.connect(self.check_for_updates)
         card_layout.addWidget(update, 0, Qt.AlignLeft)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("aboutScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        content = QWidget()
+        content.setObjectName("aboutContent")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 8, 0)
+        content_layout.addWidget(card)
+        content_layout.addStretch(1)
+        scroll.setWidget(content)
+
         page.layout().addWidget(title)
-        page.layout().addWidget(card)
-        page.layout().addStretch(1)
+        page.layout().addWidget(scroll, 1)
         return page
 
     def _build_tray(self) -> None:
@@ -1125,9 +1311,9 @@ class GradeMonitorQtApp(QMainWindow):
         self.guidance_body.setText(guidance["body"])
         self._last_guidance_action = guidance["primary_action"]
         self.next_check_label.setText(f"每 {config.get('poll_interval_minutes', 30)} 分钟")
-        self._set_recent_changes(recent_change_rows(state))
+        self._set_recent_changes(recent_change_rows(state, limit=20))
         self._set_summary_cards(state, config, installed)
-        self._set_status_center(status_center_rows(config, state, installed))
+        self._set_status_center(status_center_rows(config, state, installed)[:3])
 
     def _set_recent_changes(self, recent: list[tuple[str, str, str]]) -> None:
         while self.recent_list.count():
@@ -1138,8 +1324,11 @@ class GradeMonitorQtApp(QMainWindow):
                 widget.deleteLater()
 
         if not recent:
+            self.recent_title.setText("最近变化")
+            self.recent_content.setMinimumHeight(74)
             empty = QFrame()
             empty.setObjectName("recentEmpty")
+            empty.setMinimumHeight(68)
             layout = QVBoxLayout(empty)
             layout.setContentsMargins(14, 14, 14, 14)
             title = QLabel("暂无新的成绩变化")
@@ -1153,9 +1342,12 @@ class GradeMonitorQtApp(QMainWindow):
             self.recent_list.addStretch(1)
             return
 
+        self.recent_title.setText(f"最近变化 · {len(recent)} 条")
+        self.recent_content.setMinimumHeight(len(recent) * 72)
         for course, score, semester in recent:
             row = QFrame()
             row.setObjectName("recentRow")
+            row.setMinimumHeight(64)
             row.setToolTip(f"{course}\n学期: {semester}\n成绩: {score or '已更新'}")
             layout = QHBoxLayout(row)
             layout.setContentsMargins(14, 10, 12, 10)
@@ -1189,10 +1381,18 @@ class GradeMonitorQtApp(QMainWindow):
                 widget.setParent(None)
                 widget.deleteLater()
 
+        columns = 3
+        min_height = 100
+        if hasattr(self, "runtime_status_card"):
+            self.runtime_status_card.setMinimumHeight(190)
+        for column in range(columns):
+            self.status_center_grid.setColumnStretch(column, 1)
         for index, row_data in enumerate(rows):
             tone = row_data.get("tone", "neutral").title()
             tile = QFrame()
             tile.setObjectName("runtimeTile")
+            tile.setMinimumHeight(min_height)
+            tile.setMinimumWidth(150)
             tile.setToolTip(
                 f"{row_data.get('label', '')}\n{row_data.get('value', '')}\n{row_data.get('detail', '')}".strip()
             )
@@ -1212,7 +1412,7 @@ class GradeMonitorQtApp(QMainWindow):
             layout.addWidget(label)
             layout.addWidget(value)
             layout.addWidget(detail)
-            self.status_center_grid.addWidget(tile, index // 3, index % 3)
+            self.status_center_grid.addWidget(tile, index // columns, index % columns)
 
     def _set_summary_cards(self, state: dict, config: dict, installed: bool) -> None:
         while self.summary_grid.count():
@@ -1222,27 +1422,30 @@ class GradeMonitorQtApp(QMainWindow):
                 widget.setParent(None)
                 widget.deleteLater()
         grades = state.get("grades", {})
-        monitor = state.get("monitor", {})
         values = [
             ("成绩数量", str(len(grades) if isinstance(grades, dict) else 0), "metric"),
-            ("查询频率", f"{config.get('poll_interval_minutes', 30)} 分钟", "metric"),
-            ("最近检查", str(monitor.get("last_check_at", "尚未检查")).replace("T", "\n"), "metricCompact"),
+            ("提醒记录", str(len(state.get("history", [])) if isinstance(state.get("history", []), list) else 0), "metric"),
             ("安全边界", "严格只读", "metricCompact"),
         ]
+        for column in range(len(values)):
+            self.summary_grid.setColumnStretch(column, 1)
         for index, (label, value, style_name) in enumerate(values):
             card = QFrame()
             card.setObjectName("metricTile")
+            card.setMinimumWidth(112)
             layout = QVBoxLayout(card)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(4)
+            layout.setContentsMargins(6, 2, 6, 2)
+            layout.setSpacing(6)
             name = QLabel(label)
-            name.setObjectName("muted")
+            name.setObjectName("summaryLabel")
+            name.setAlignment(Qt.AlignCenter)
             number = QLabel(value)
-            number.setObjectName(style_name)
+            number.setObjectName("summaryBadge" if label == "安全边界" else "summaryNumber")
+            number.setAlignment(Qt.AlignCenter)
             number.setWordWrap(True)
             layout.addWidget(name)
-            layout.addWidget(number)
-            self.summary_grid.addWidget(card, index // 2, index % 2)
+            layout.addWidget(number, 0, Qt.AlignCenter)
+            self.summary_grid.addWidget(card, 0, index)
 
     def refresh_grades(self) -> None:
         grades = list(load_state(self.paths).get("grades", {}).values())
@@ -1261,6 +1464,11 @@ class GradeMonitorQtApp(QMainWindow):
             search_text=self.course_search.text(),
             include_electives=self.include_electives.isChecked(),
         )
+        self.visible_grades = sorted(
+            filtered,
+            key=lambda grade: (str(grade.get("semester", "")), str(grade.get("course_name", ""))),
+            reverse=True,
+        )
         analytics = grade_analytics(filtered)
         self.avg_gpa_label.setText("--" if analytics["average_gpa"] is None else f"{analytics['average_gpa']:.2f}")
         self.counted_courses_label.setText(str(analytics["numeric_gpa_count"]))
@@ -1274,7 +1482,12 @@ class GradeMonitorQtApp(QMainWindow):
             self.highest_score_label.setText(f"{analytics['highest_score']:.0f}")
         self.trend_chart.set_points(analytics["semester_trend"])
         self.distribution_chart.set_distribution(analytics["distribution"])
-        self._fill_table(self.grades_table, grade_table_rows(filtered))
+        self._fill_table(self.grades_table, grade_table_rows(self.visible_grades))
+
+    def show_grade_detail(self, row: int, _column: int) -> None:
+        if row < 0 or row >= len(self.visible_grades):
+            return
+        GradeDetailDialog(self, self.visible_grades[row]).exec()
 
     def refresh_history(self) -> None:
         self._fill_table(self.history_table, history_table_rows(load_state(self.paths)))
@@ -1330,16 +1543,62 @@ class GradeMonitorQtApp(QMainWindow):
         if dialog.exec() != QDialog.Accepted:
             return
         self.interval.setValue(dialog.options()["interval_minutes"])
+        self._show_setup_progress()
         self._run_background(
             lambda: self._one_click_setup_worker(dialog.options()),
             self._one_click_setup_complete,
+            self._one_click_setup_failed,
         )
+
+    def _show_setup_progress(self) -> None:
+        self._close_setup_progress()
+        self._setup_progress_index = 0
+        self._setup_progress_steps = [
+            "正在检查本机环境...",
+            "正在保存账号到 Windows 凭据管理器...",
+            "正在打开学校登录页面；如遇验证码，请在浏览器里完成。",
+            "正在只读读取成绩并建立本地基线...",
+            "正在配置后台自启动...",
+        ]
+        first_message = f"{self._setup_progress_steps[0]}\n请保持窗口打开；如浏览器弹出，请按学校页面完成登录。"
+        self._setup_progress = QProgressDialog(first_message, "", 0, 0, self)
+        self._setup_progress.setWindowTitle("一键配置本机")
+        self._setup_progress.setCancelButton(None)
+        self._setup_progress.setWindowModality(Qt.WindowModal)
+        self._setup_progress.setMinimumWidth(480)
+        self._setup_progress.setMinimumHeight(130)
+        self._setup_progress.setMinimumDuration(0)
+        self._setup_progress.setAutoClose(False)
+        self._setup_progress.show()
+
+        self._setup_progress_timer = QTimer(self)
+        self._setup_progress_timer.timeout.connect(self._advance_setup_progress)
+        self._setup_progress_timer.start(2200)
+
+    def _advance_setup_progress(self) -> None:
+        if not self._setup_progress:
+            return
+        self._setup_progress_index = min(self._setup_progress_index + 1, len(self._setup_progress_steps) - 1)
+        self._setup_progress.setLabelText(
+            f"{self._setup_progress_steps[self._setup_progress_index]}\n请保持窗口打开；如浏览器弹出，请按学校页面完成登录。"
+        )
+
+    def _close_setup_progress(self) -> None:
+        if self._setup_progress_timer:
+            self._setup_progress_timer.stop()
+            self._setup_progress_timer.deleteLater()
+            self._setup_progress_timer = None
+        if self._setup_progress:
+            self._setup_progress.close()
+            self._setup_progress.deleteLater()
+            self._setup_progress = None
 
     def _one_click_setup_worker(self, options: dict) -> tuple[list[dict], FirstRunSetupResult]:
         result = run_first_run_setup(paths=self.paths, **options)
         return list(load_state(self.paths).get("grades", {}).values()), result
 
     def _one_click_setup_complete(self, payload: tuple[list[dict], FirstRunSetupResult]) -> None:
+        self._close_setup_progress()
         grades, result = payload
         self._fill_table(self.grades_table, grade_table_rows(grades))
         self.refresh_all()
@@ -1352,6 +1611,10 @@ class GradeMonitorQtApp(QMainWindow):
             "首次配置已完成",
             f"现在已经可以后台提醒了。\n\n已建立 {result.grade_count} 条成绩基线；首次配置不会对已有成绩弹通知。",
         )
+
+    def _one_click_setup_failed(self, message: str) -> None:
+        self._close_setup_progress()
+        QMessageBox.critical(self, "一键配置本机", message)
 
     def check_now(self) -> None:
         self._run_background(self._check_now_worker, self._check_complete)
@@ -1379,7 +1642,8 @@ class GradeMonitorQtApp(QMainWindow):
             return
         options = dialog.options()
         options["install_autostart"] = False
-        self._run_background(lambda: self._one_click_setup_worker(options), self._one_click_setup_complete)
+        self._show_setup_progress()
+        self._run_background(lambda: self._one_click_setup_worker(options), self._one_click_setup_complete, self._one_click_setup_failed)
 
     def save_interval(self) -> None:
         config = set_poll_interval(self.paths, self.interval.value())
@@ -1540,7 +1804,12 @@ class GradeMonitorQtApp(QMainWindow):
         document.setPageSize(printer.pageRect(QPrinter.Point).size())
         document.print_(printer)
 
-    def _run_background(self, target: Callable[[], object], on_success: Callable[[object], None]) -> None:
+    def _run_background(
+        self,
+        target: Callable[[], object],
+        on_success: Callable[[object], None],
+        on_error: Callable[[str], None] | None = None,
+    ) -> None:
         signals = _Signals()
         self._signals.append(signals)
 
@@ -1549,7 +1818,12 @@ class GradeMonitorQtApp(QMainWindow):
                 self._signals.remove(signals)
 
         signals.success.connect(lambda result: (cleanup(), on_success(result)))
-        signals.error.connect(lambda message: (cleanup(), QMessageBox.critical(self, "GDUT 成绩提醒", message)))
+        signals.error.connect(
+            lambda message: (
+                cleanup(),
+                on_error(message) if on_error else QMessageBox.critical(self, "GDUT 成绩提醒", message),
+            )
+        )
 
         def runner() -> None:
             try:
@@ -1585,6 +1859,12 @@ class GradeMonitorQtApp(QMainWindow):
             QFrame#recentRow { background: #f8fafc; border: 1px solid #e7edf5; border-radius: 12px; }
             QFrame#recentRow:hover { background: #eef4ff; border-color: #c7d8ff; }
             QFrame#recentEmpty { background: #f8fafc; border: 1px dashed #d7e0ec; border-radius: 12px; }
+            QScrollArea#recentScroll, QWidget#recentContent { background: transparent; }
+            QScrollArea#recentScroll QScrollBar:vertical { background: transparent; width: 8px; margin: 2px 0 2px 0; }
+            QScrollArea#recentScroll QScrollBar::handle:vertical { background: #cbd5e1; border-radius: 4px; min-height: 26px; }
+            QScrollArea#recentScroll QScrollBar::handle:vertical:hover { background: #94a3b8; }
+            QScrollArea#recentScroll QScrollBar::add-line:vertical, QScrollArea#recentScroll QScrollBar::sub-line:vertical { height: 0; }
+            QScrollArea#recentScroll QScrollBar::add-page:vertical, QScrollArea#recentScroll QScrollBar::sub-page:vertical { background: transparent; }
             QFrame#runtimeCard { background: white; border: 1px solid #e3e8f0; border-radius: 16px; }
             QFrame#runtimeTile { background: #f8fafc; border: 1px solid #e7edf5; border-radius: 12px; }
             QFrame#runtimeTile:hover { background: #eef4ff; border-color: #c7d8ff; }
@@ -1594,6 +1874,9 @@ class GradeMonitorQtApp(QMainWindow):
             #runtimeValueError { color: #b91c1c; font-size: 16px; font-weight: 900; }
             #runtimeValueNeutral { color: #0f172a; font-size: 16px; font-weight: 900; }
             #runtimeDetail { color: #64748b; font-size: 12px; }
+            #summaryLabel { color: #64748b; font-size: 13px; }
+            #summaryNumber { color: #0f172a; font-size: 22px; font-weight: 800; }
+            #summaryBadge { background: #ecfdf5; color: #047857; border: 1px solid #bbf7d0; border-radius: 9px; padding: 5px 9px; font-size: 15px; font-weight: 800; }
             QFrame#guideCard { background: white; border: 1px solid #e3e8f0; border-radius: 16px; }
             QFrame#guideStep { background: #f8fbff; border: 1px solid #e4edf8; border-radius: 12px; }
             #guideStepTitle { color: #0f172a; font-weight: 800; font-size: 13px; }
@@ -1609,7 +1892,14 @@ class GradeMonitorQtApp(QMainWindow):
             #wizardBody { color: #475569; line-height: 155%; }
             QFrame#wizardItem { background: #f8fafc; border: 1px solid #edf2f7; border-radius: 10px; }
             #scoreBadge { background: #eaf2ff; color: #1d4ed8; border-radius: 9px; padding: 7px 10px; font-weight: 800; }
+            #detailTitle { color: #0f172a; font-size: 22px; font-weight: 900; }
+            #detailLabel { color: #64748b; font-size: 12px; }
+            #detailValue { color: #0f172a; font-size: 14px; font-weight: 700; }
+            QFrame#detailRawRow { background: #f8fafc; border: 1px solid #edf2f7; border-radius: 10px; }
+            QScrollArea#gradeDetailScroll, QWidget#gradeDetailContent { background: transparent; }
             #aboutBody { color: #334155; line-height: 155%; }
+            QScrollArea#wizardPageScroll, QWidget#wizardPageContent,
+            QScrollArea#aboutScroll, QWidget#aboutContent { background: transparent; }
             QScrollArea#helpScroll, QWidget#helpContent { background: transparent; }
             QFrame#helpSection { background: white; border: 1px solid #e3e8f0; border-radius: 16px; }
             #helpSectionTitle { color: #0f172a; font-size: 18px; font-weight: 800; }
@@ -1640,9 +1930,10 @@ class GradeMonitorQtApp(QMainWindow):
             QLineEdit, QComboBox, QSpinBox { background: white; border: 1px solid #dbe3ef; border-radius: 9px; padding: 8px 10px; }
             QCheckBox { color: #334155; spacing: 8px; }
             QTableWidget { background: white; border: 1px solid #e3e8f0; border-radius: 12px; gridline-color: #eef2f7; }
+            QTableWidget::item { padding: 7px 8px; }
             QTableWidget::item:alternate { background: #fbfdff; }
             QTableWidget::item:selected { background: #dbeafe; color: #111827; }
-            QHeaderView::section { background: #f8fafc; padding: 8px; border: 0; border-bottom: 1px solid #e5e7eb; color: #64748b; font-weight: 600; }
+            QHeaderView::section { background: #f8fafc; padding: 9px 10px; border: 0; border-bottom: 1px solid #e5e7eb; color: #64748b; font-weight: 600; }
             """
         )
 

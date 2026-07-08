@@ -14,7 +14,7 @@ class VersionAndAboutTests(unittest.TestCase):
         pyproject_version = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE).group(1)
 
         self.assertEqual(APP_VERSION, pyproject_version)
-        self.assertEqual(APP_VERSION, "0.2.7")
+        self.assertEqual(APP_VERSION, "0.2.8")
         self.assertIn(f'#define AppVersion "{APP_VERSION}"', installer)
 
     def test_about_text_includes_author_version_and_readonly_boundary(self):

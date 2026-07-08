@@ -3,7 +3,7 @@ import unittest
 
 import requests
 
-from gdut_grade_monitor.auth import BrowserFillMismatchError, PlaywrightBrowserMissingError, SessionExpiredError
+from gdut_grade_monitor.auth import BrowserFillMismatchError, BrowserLaunchError, PlaywrightBrowserMissingError, SessionExpiredError
 from gdut_grade_monitor.client import GradeResponseError
 from gdut_grade_monitor.errors import user_friendly_error_message
 
@@ -39,6 +39,14 @@ class FriendlyErrorMessageTests(unittest.TestCase):
 
         self.assertIn("输入法", message)
         self.assertIn("英文", message)
+
+    def test_maps_browser_launch_error_without_raw_playwright_log(self):
+        message = user_friendly_error_message(BrowserLaunchError())
+
+        self.assertIn("登录浏览器启动失败", message)
+        self.assertIn("关闭本工具打开的 Chrome/Edge", message)
+        self.assertNotIn("TargetClosedError", message)
+        self.assertNotIn("--remote-debugging-pipe", message)
 
     def test_maps_timeout_and_json_errors(self):
         timeout_message = user_friendly_error_message(requests.Timeout("slow"))
