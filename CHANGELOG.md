@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.1 - 2026-07-08
+
+### Added
+
+- Login automation now tries to select the CAS "7 days / keep me signed in" checkbox before submitting credentials.
+- The official transcript button now first opens the school service hall with this tool's managed login browser profile, then falls back to the system default browser if needed.
+
+### Security
+
+- The official transcript entry remains manual-only and does not submit forms or call write APIs.
+
 ## 0.2.0 - 2026-07-08
 
 ### Added

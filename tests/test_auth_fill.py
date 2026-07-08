@@ -26,9 +26,14 @@ class FakePage:
         self.force_password_mismatch = force_password_mismatch
         self.values = {}
         self.clicked = False
+        self.evaluate_scripts = []
 
     def locator(self, selector):
         return FakeLocator(self, selector)
+
+    def evaluate(self, script):
+        self.evaluate_scripts.append(script)
+        return True
 
 
 class AuthFillTests(unittest.TestCase):
@@ -45,7 +50,21 @@ class AuthFillTests(unittest.TestCase):
 
         self.assertEqual(page.values["input[name='username']"], "3210000000")
         self.assertEqual(page.values["input[name='password']"], "correct-password")
+        self.assertTrue(any("7天" in script and "保持登录" in script for script in page.evaluate_scripts))
         self.assertTrue(page.clicked)
+
+    def test_try_enable_extended_login_ignores_missing_checkbox(self):
+        class NoCheckboxPage(FakePage):
+            def evaluate(self, script):
+                self.evaluate_scripts.append(script)
+                return False
+
+        page = NoCheckboxPage()
+
+        enabled = AuthManager(paths=None)._try_enable_extended_login(page)
+
+        self.assertFalse(enabled)
+        self.assertTrue(page.evaluate_scripts)
 
 
 if __name__ == "__main__":

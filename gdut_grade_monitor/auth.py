@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -60,7 +61,7 @@ class AuthManager:
             raise RuntimeError("playwright is required for login. Run: playwright install chromium") from exc
 
         self.paths.ensure()
-        user_data_dir = str(self.paths.root / "browser_data")
+        user_data_dir = str(self.login_browser_data_dir)
         with sync_playwright() as p:
             launch_options = {
                 "headless": False,
@@ -101,6 +102,28 @@ class AuthManager:
             raise SessionExpiredError("Login completed but session validation failed.")
         return session
 
+    @property
+    def login_browser_data_dir(self) -> Path:
+        return self.paths.root / "browser_data"
+
+    def open_url_with_login_profile(self, url: str) -> bool:
+        self.paths.ensure()
+        browser = find_system_browser()
+        if not browser:
+            return False
+        subprocess.Popen(
+            [
+                browser,
+                f"--user-data-dir={self.login_browser_data_dir}",
+                "--new-window",
+                url,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+        return True
+
     def is_logged_in(self, session) -> bool:
         try:
             response = ReadonlyHttpClient(session, self.base_url).get(WELCOME_PATH, allow_redirects=True, timeout=10)
@@ -125,12 +148,50 @@ class AuthManager:
                 pass
         if not username_filled or password_locator is None:
             return
+        self._try_enable_extended_login(page)
         for selector in ("button[type='submit']", "#login_submit", "text=登录"):
             try:
                 page.locator(selector).first.click(timeout=2000)
                 return
             except Exception:
                 continue
+
+    @staticmethod
+    def _try_enable_extended_login(page) -> bool:
+        script = """
+        () => {
+            const keywords = ["7天", "七天", "保持登录", "免登录", "记住", "remember"];
+            const boxes = Array.from(document.querySelectorAll("input[type='checkbox']"));
+            for (const box of boxes) {
+                const id = box.id || "";
+                let forLabel = "";
+                if (id && window.CSS && CSS.escape) {
+                    const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+                    forLabel = label ? label.innerText : "";
+                }
+                const text = [
+                    box.name || "",
+                    box.id || "",
+                    box.value || "",
+                    box.getAttribute("aria-label") || "",
+                    box.closest("label") ? box.closest("label").innerText : "",
+                    box.parentElement ? box.parentElement.innerText : "",
+                    forLabel,
+                ].join(" ");
+                if (keywords.some((keyword) => text.includes(keyword))) {
+                    if (!box.checked) {
+                        box.click();
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+        """
+        try:
+            return bool(page.evaluate(script))
+        except Exception:
+            return False
 
     @staticmethod
     def _fill_first_available(page, selectors: tuple[str, ...], value: str):

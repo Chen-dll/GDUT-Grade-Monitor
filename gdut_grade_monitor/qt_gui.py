@@ -1198,7 +1198,9 @@ class GradeMonitorQtApp(QMainWindow):
         )
 
     def open_official_transcript_portal(self) -> None:
-        QDesktopServices.openUrl(QUrl(OFFICIAL_TRANSCRIPT_PORTAL_URL))
+        opened = AuthManager(self.paths).open_url_with_login_profile(OFFICIAL_TRANSCRIPT_PORTAL_URL)
+        if not opened:
+            QDesktopServices.openUrl(QUrl(OFFICIAL_TRANSCRIPT_PORTAL_URL))
         QMessageBox.information(self, "官方成绩单", official_transcript_guidance())
 
     def _write_transcript_pdf(self, output: Path, html: str) -> None:
