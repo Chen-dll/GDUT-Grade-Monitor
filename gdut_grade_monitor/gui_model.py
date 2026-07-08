@@ -275,6 +275,7 @@ def first_run_wizard_pages() -> list[dict[str, object]]:
     return [
         {
             "title": "欢迎使用 GDUT 成绩提醒",
+            "nav_title": "欢迎使用",
             "body": "这个工具会在你的 Windows 电脑上后台运行，定时只读检查教务系统课程成绩。",
             "items": [
                 "发现新增成绩或成绩变化时才弹 Windows 通知。",
@@ -285,6 +286,7 @@ def first_run_wizard_pages() -> list[dict[str, object]]:
         },
         {
             "title": "隐私与只读边界",
+            "nav_title": "隐私边界",
             "body": "核心原则是本地保存、严格只读、不给教务系统写入任何数据。",
             "items": [
                 "密码不会上传，只保存到 Windows 凭据管理器。",
@@ -296,6 +298,7 @@ def first_run_wizard_pages() -> list[dict[str, object]]:
         },
         {
             "title": "认识主界面",
+            "nav_title": "认识界面",
             "body": "配置完成后，大多数操作都可以在左侧导航里完成。",
             "items": [
                 "总览：查看后台状态、下一次检查频率和最近变化。",
@@ -308,6 +311,7 @@ def first_run_wizard_pages() -> list[dict[str, object]]:
         },
         {
             "title": "开始初始化",
+            "nav_title": "开始配置",
             "body": "接下来会进入一键配置流程。你只需要填写学号、密码和检查频率，然后按弹出的学校登录页完成认证。",
             "items": [
                 "建议保持默认每 30 分钟检查一次。",

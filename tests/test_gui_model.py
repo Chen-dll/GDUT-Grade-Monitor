@@ -107,6 +107,8 @@ class GuiModelTests(unittest.TestCase):
         text = "\n".join(f"{page['title']} {page['body']} {' '.join(page['items'])}" for page in pages)
 
         self.assertEqual(pages[0]["title"], "欢迎使用 GDUT 成绩提醒")
+        self.assertEqual(pages[0]["nav_title"], "欢迎使用")
+        self.assertLessEqual(max(len(str(page["nav_title"])) for page in pages), 6)
         self.assertEqual(pages[-1]["primary_action"], "开始一键配置")
         self.assertIn("严格只读", text)
         self.assertIn("密码不会上传", text)

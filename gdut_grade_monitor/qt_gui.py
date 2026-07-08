@@ -156,8 +156,8 @@ class FirstRunWizardDialog(QDialog):
 
         self.step_labels: list[QLabel] = []
         for index, page in enumerate(self.pages_data, start=1):
-            step = QLabel(f"{index:02d}  {page['title']}")
-            step.setWordWrap(True)
+            step = QLabel(f"{index:02d}  {page.get('nav_title') or page['title']}")
+            step.setWordWrap(False)
             step.setObjectName("wizardStepPending")
             self.step_labels.append(step)
             rail_layout.addWidget(step)

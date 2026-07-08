@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6 - 2026-07-08
+
+### Fixed
+
+- Shortened the first-run wizard sidebar step labels so the active step no longer wraps awkwardly.
+
 ## 0.2.5 - 2026-07-08
 
 ### Added
