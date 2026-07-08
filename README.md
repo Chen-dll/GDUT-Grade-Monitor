@@ -2,7 +2,7 @@
 
 广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
 
-![Version](https://img.shields.io/badge/version-0.2.4-blue)
+![Version](https://img.shields.io/badge/version-0.2.5-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -26,6 +26,7 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 - Windows 通知提醒、提醒历史、成绩表格 GUI。
 - 支持 Windows 登录后自动后台运行；没有任务计划权限时自动使用用户启动项。
 - 提供 `doctor` 环境检查，方便在别人的电脑上排查安装问题。
+- 新电脑第一次打开会自动显示“新手向导”，按步骤介绍隐私、只读边界、页面功能和一键配置。
 - GUI 提供“一键配置本机”：填写学号、密码和检查频率后，自动完成登录、建立基线、安装后台自启动。
 - 可从本地成绩快照导出 PDF/HTML 成绩单，便于个人核对；不会提交学校成绩单申请。
 - 可打开学校网上办事大厅官方成绩单入口，由用户手动查看或下载官方成绩单；工具不会自动提交申请。

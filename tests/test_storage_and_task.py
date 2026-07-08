@@ -40,6 +40,7 @@ class StorageAndTaskTests(unittest.TestCase):
             config = load_config(AppPaths(Path(tmp)))
 
             self.assertEqual(config["poll_interval_minutes"], 30)
+            self.assertFalse(config["first_run_wizard_seen"])
 
     @patch("gdut_grade_monitor.credentials.keyring")
     def test_credentials_use_keyring_service_without_returning_password_to_config(self, keyring_mock):

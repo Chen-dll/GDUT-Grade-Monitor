@@ -45,6 +45,7 @@ def default_config() -> dict[str, Any]:
         "startup_enabled": False,
         "log_level": "INFO",
         "student_id": "",
+        "first_run_wizard_seen": False,
     }
 
 

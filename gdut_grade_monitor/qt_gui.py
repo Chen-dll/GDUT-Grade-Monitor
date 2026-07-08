@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QLockFile, QMarginsF, QObject, Qt, QUrl, Signal
+from PySide6.QtCore import QLockFile, QMarginsF, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -59,7 +59,8 @@ from .credentials import CredentialStore, PasswordInputError
 from .diagnostics import create_diagnostics_zip
 from .doctor import overall_ok, run_checks
 from .errors import user_friendly_error_message
-from .gui_model import about_text, doctor_table_rows, filter_grades, grade_analytics, grade_table_rows, help_sections, history_table_rows
+from .gui_model import about_text, doctor_table_rows, filter_grades, first_run_wizard_pages, grade_analytics, grade_table_rows
+from .gui_model import help_sections, history_table_rows
 from .gui_model import onboarding_steps, recent_change_rows, semester_options
 from .gui_model import setup_guidance, status_summary
 from .monitor import GradeMonitor
@@ -123,6 +124,144 @@ class FirstRunSetupDialog(QDialog):
             "interval_minutes": self.interval.value(),
             "install_autostart": self.autostart.isChecked(),
         }
+
+
+class FirstRunWizardDialog(QDialog):
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setWindowTitle("新手向导")
+        self.setModal(True)
+        self.setMinimumSize(760, 500)
+        self.pages_data = first_run_wizard_pages()
+        self.start_requested = False
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        rail = QFrame()
+        rail.setObjectName("wizardRail")
+        rail.setFixedWidth(230)
+        rail_layout = QVBoxLayout(rail)
+        rail_layout.setContentsMargins(22, 22, 18, 22)
+        rail_layout.setSpacing(12)
+        rail_title = QLabel("GDUT 成绩提醒")
+        rail_title.setObjectName("wizardRailTitle")
+        rail_body = QLabel("首次使用向导")
+        rail_body.setObjectName("wizardRailBody")
+        rail_body.setWordWrap(True)
+        rail_layout.addWidget(rail_title)
+        rail_layout.addWidget(rail_body)
+        rail_layout.addSpacing(10)
+
+        self.step_labels: list[QLabel] = []
+        for index, page in enumerate(self.pages_data, start=1):
+            step = QLabel(f"{index:02d}  {page['title']}")
+            step.setWordWrap(True)
+            step.setObjectName("wizardStepPending")
+            self.step_labels.append(step)
+            rail_layout.addWidget(step)
+        rail_layout.addStretch(1)
+
+        safety = QLabel("本工具只读查询成绩，不修改教务系统数据。")
+        safety.setObjectName("wizardRailBody")
+        safety.setWordWrap(True)
+        rail_layout.addWidget(safety)
+        root.addWidget(rail)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(26, 24, 26, 20)
+        layout.setSpacing(14)
+
+        self.progress_label = QLabel("")
+        self.progress_label.setObjectName("wizardProgress")
+        layout.addWidget(self.progress_label)
+
+        self.stack = QStackedWidget()
+        self.stack.setObjectName("wizardStack")
+        for page in self.pages_data:
+            self.stack.addWidget(self._page_widget(page))
+        layout.addWidget(self.stack, 1)
+
+        buttons = QHBoxLayout()
+        self.skip_button = QPushButton("稍后再说")
+        self.skip_button.setObjectName("secondaryButton")
+        self.back_button = QPushButton("上一步")
+        self.back_button.setObjectName("secondaryButton")
+        self.next_button = QPushButton("下一步")
+        self.next_button.setObjectName("primaryButton")
+        self.skip_button.clicked.connect(self.reject)
+        self.back_button.clicked.connect(self._back)
+        self.next_button.clicked.connect(self._next)
+        buttons.addWidget(self.skip_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.back_button)
+        buttons.addWidget(self.next_button)
+        layout.addLayout(buttons)
+        root.addWidget(content, 1)
+        self._refresh_buttons()
+
+    def _page_widget(self, page: dict[str, object]) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+
+        title = QLabel(str(page["title"]))
+        title.setObjectName("wizardTitle")
+        body = QLabel(str(page["body"]))
+        body.setObjectName("wizardBody")
+        body.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(body)
+
+        for item in page.get("items", []):
+            row = QFrame()
+            row.setObjectName("wizardItem")
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(12, 10, 12, 10)
+            row_layout.setSpacing(10)
+            bullet = QLabel("")
+            bullet.setObjectName("helpBullet")
+            bullet.setFixedSize(8, 8)
+            text = QLabel(str(item))
+            text.setWordWrap(True)
+            text.setObjectName("helpItemText")
+            row_layout.addWidget(bullet, 0, Qt.AlignTop)
+            row_layout.addWidget(text, 1)
+            layout.addWidget(row)
+
+        layout.addStretch(1)
+        return widget
+
+    def _back(self) -> None:
+        self.stack.setCurrentIndex(max(0, self.stack.currentIndex() - 1))
+        self._refresh_buttons()
+
+    def _next(self) -> None:
+        if self.stack.currentIndex() >= self.stack.count() - 1:
+            self.start_requested = True
+            self.accept()
+            return
+        self.stack.setCurrentIndex(self.stack.currentIndex() + 1)
+        self._refresh_buttons()
+
+    def _refresh_buttons(self) -> None:
+        index = self.stack.currentIndex()
+        page = self.pages_data[index]
+        self.progress_label.setText(f"第 {index + 1} / {self.stack.count()} 步")
+        self.back_button.setEnabled(index > 0)
+        self.next_button.setText(str(page.get("primary_action") or "下一步"))
+        for step_index, label in enumerate(self.step_labels):
+            if step_index < index:
+                label.setObjectName("wizardStepDone")
+            elif step_index == index:
+                label.setObjectName("wizardStepActive")
+            else:
+                label.setObjectName("wizardStepPending")
+            label.style().unpolish(label)
+            label.style().polish(label)
 
 
 class TranscriptExportDialog(QDialog):
@@ -408,6 +547,7 @@ class GradeMonitorQtApp(QMainWindow):
         self._build_tray()
         self.refresh_all()
         self._fit_to_current_screen()
+        QTimer.singleShot(350, self.maybe_show_first_run_wizard)
 
     def _fit_to_current_screen(self) -> None:
         screen = QApplication.primaryScreen()
@@ -576,6 +716,7 @@ class GradeMonitorQtApp(QMainWindow):
         actions = QHBoxLayout(actions_card)
         for label, callback, secondary in [
             ("一键配置本机", self.one_click_setup, False),
+            ("新手向导", self.open_first_run_wizard, True),
             ("导出诊断包", self.export_diagnostics, True),
             ("安装自启动", self.install_startup, True),
             ("打开数据目录", self.open_data_dir, True),
@@ -625,6 +766,10 @@ class GradeMonitorQtApp(QMainWindow):
         help_button.setObjectName("secondaryButton")
         help_button.clicked.connect(lambda: self._set_page(5))
         layout.addWidget(help_button)
+        wizard_button = QPushButton("新手向导")
+        wizard_button.setObjectName("secondaryButton")
+        wizard_button.clicked.connect(self.open_first_run_wizard)
+        layout.addWidget(wizard_button)
         return card
 
     def _grades_page(self) -> QWidget:
@@ -802,6 +947,13 @@ class GradeMonitorQtApp(QMainWindow):
         title.setObjectName("title")
         subtitle = QLabel("这里集中放第一次使用、成绩提醒、数据隐私和排错说明。")
         subtitle.setObjectName("muted")
+        top = QHBoxLayout()
+        top.addWidget(title)
+        top.addStretch(1)
+        wizard = QPushButton("打开新手向导")
+        wizard.setObjectName("secondaryButton")
+        wizard.clicked.connect(self.open_first_run_wizard)
+        top.addWidget(wizard)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -851,7 +1003,7 @@ class GradeMonitorQtApp(QMainWindow):
         content_layout.addStretch(1)
         scroll.setWidget(content)
 
-        page.layout().addWidget(title)
+        page.layout().addLayout(top)
         page.layout().addWidget(subtitle)
         page.layout().addWidget(scroll, 1)
         return page
@@ -1066,6 +1218,23 @@ class GradeMonitorQtApp(QMainWindow):
         else:
             self.one_click_setup()
 
+    def maybe_show_first_run_wizard(self) -> None:
+        config = load_config(self.paths)
+        state = load_state(self.paths)
+        if config.get("student_id") or state.get("grades") or config.get("first_run_wizard_seen"):
+            return
+        self.open_first_run_wizard(auto=True)
+
+    def open_first_run_wizard(self, auto: bool = False) -> None:
+        dialog = FirstRunWizardDialog(self)
+        result = dialog.exec()
+        if auto or dialog.start_requested:
+            config = load_config(self.paths)
+            config["first_run_wizard_seen"] = True
+            save_config(self.paths, config)
+        if result == QDialog.Accepted and dialog.start_requested:
+            self.one_click_setup()
+
     def one_click_setup(self) -> None:
         dialog = FirstRunSetupDialog(self, self.interval.value())
         if dialog.exec() != QDialog.Accepted:
@@ -1272,7 +1441,7 @@ class GradeMonitorQtApp(QMainWindow):
     def _apply_style(self) -> None:
         self.setStyleSheet(
             """
-            QWidget { font-family: "Microsoft YaHei UI", "Segoe UI"; font-size: 13px; color: #1f2937; }
+            QWidget { font-family: "Microsoft YaHei UI", "Microsoft YaHei", "SimSun", "Segoe UI"; font-size: 13px; color: #1f2937; }
             QStackedWidget#content, QWidget#page { background: #f6f8fb; }
             QWidget#sidebar { background: #101827; color: #e5e7eb; }
             #brandIcon { min-width: 46px; max-width: 46px; min-height: 46px; max-height: 46px; border-radius: 13px; background: #1f2937; color: #cbd5e1; font-size: 18px; }
@@ -1299,6 +1468,16 @@ class GradeMonitorQtApp(QMainWindow):
             QFrame#guideStep { background: #f8fbff; border: 1px solid #e4edf8; border-radius: 12px; }
             #guideStepTitle { color: #0f172a; font-weight: 800; font-size: 13px; }
             #guideStepBody { color: #64748b; font-size: 12px; }
+            QFrame#wizardRail { background: #111827; }
+            #wizardRailTitle { color: white; font-size: 20px; font-weight: 900; }
+            #wizardRailBody { color: #94a3b8; line-height: 150%; }
+            #wizardStepActive { color: white; background: #2563eb; border-radius: 10px; padding: 10px 12px; font-weight: 800; }
+            #wizardStepDone { color: #dbeafe; background: rgba(37, 99, 235, 0.28); border-radius: 10px; padding: 10px 12px; font-weight: 700; }
+            #wizardStepPending { color: #94a3b8; background: transparent; border-radius: 10px; padding: 10px 12px; }
+            #wizardProgress { color: #2563eb; font-weight: 800; }
+            #wizardTitle { color: #0f172a; font-size: 24px; font-weight: 900; }
+            #wizardBody { color: #475569; line-height: 155%; }
+            QFrame#wizardItem { background: #f8fafc; border: 1px solid #edf2f7; border-radius: 10px; }
             #scoreBadge { background: #eaf2ff; color: #1d4ed8; border-radius: 9px; padding: 7px 10px; font-weight: 800; }
             #aboutBody { color: #334155; line-height: 155%; }
             QScrollArea#helpScroll, QWidget#helpContent { background: transparent; }
@@ -1362,6 +1541,7 @@ def app_icon_path() -> Path:
 
 def _dialog_stylesheet() -> str:
     return """
+        QWidget { font-family: "Microsoft YaHei UI", "Microsoft YaHei", "SimSun", "Segoe UI"; }
         QMessageBox, QDialog { background: #ffffff; color: #111827; }
         QMessageBox QLabel, QDialog QLabel { color: #111827; }
         QMessageBox QPushButton, QDialogButtonBox QPushButton {

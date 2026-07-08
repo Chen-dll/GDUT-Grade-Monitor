@@ -54,6 +54,17 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("recentRow", text)
         self.assertIn("scoreBadge", text)
         self.assertIn("QSystemTrayIcon", text)
+        self.assertIn("QTimer.singleShot", text)
+        self.assertIn("class FirstRunWizardDialog", text)
+        self.assertIn("wizardRail", text)
+        self.assertIn("wizardStepActive", text)
+        self.assertIn("wizardStepDone", text)
+        self.assertIn("def maybe_show_first_run_wizard", text)
+        self.assertIn("def open_first_run_wizard", text)
+        self.assertIn("first_run_wizard_seen", text)
+        self.assertIn("first_run_wizard_pages", text)
+        self.assertIn("start_requested", text)
+        self.assertIn("稍后再说", text)
         self.assertIn("总览", text)
         self.assertIn("成绩", text)
         self.assertIn("提醒历史", text)
@@ -68,7 +79,25 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("密码不会上传", text)
         self.assertIn("第一次不会提醒", text)
         self.assertIn("查看帮助", text)
+        self.assertIn("新手向导", text)
         self.assertIn("关于", text)
+
+    def test_first_run_wizard_auto_open_is_limited_to_unconfigured_users(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        init_block = text.split("def __init__(self):", 1)[1].split("def _fit_to_current_screen", 1)[0]
+        auto_block = text.split("def maybe_show_first_run_wizard", 1)[1].split(
+            "def open_first_run_wizard", 1
+        )[0]
+        open_block = text.split("def open_first_run_wizard", 1)[1].split("def one_click_setup", 1)[0]
+
+        self.assertIn("QTimer.singleShot", init_block)
+        self.assertIn("student_id", auto_block)
+        self.assertIn('state.get("grades")', auto_block)
+        self.assertIn("first_run_wizard_seen", auto_block)
+        self.assertIn("self.open_first_run_wizard(auto=True)", auto_block)
+        self.assertIn("config[\"first_run_wizard_seen\"] = True", open_block)
+        self.assertIn("save_config(self.paths, config)", open_block)
+        self.assertIn("self.one_click_setup()", open_block)
 
     def test_qt_setup_completion_returns_to_dashboard_with_ready_message(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.5 - 2026-07-08
+
+### Added
+
+- Added a first-launch onboarding wizard that opens automatically on a new computer before setup.
+- Added a step-by-step wizard rail covering purpose, privacy, read-only boundaries, main pages, baseline behavior, and one-click setup.
+- Added manual "新手向导" entry points from the dashboard and Help page for users who want to review the setup flow again.
+
+### Changed
+
+- First-run guidance now feels more like a mature desktop app setup flow: users can click through pages and start one-click setup from the final step.
+- The wizard is shown only before the app has an account, local grade baseline, or a saved "seen" flag.
+
 ## 0.2.4 - 2026-07-08
 
 ### Changed

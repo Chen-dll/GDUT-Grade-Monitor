@@ -3,7 +3,7 @@ import unittest
 from gdut_grade_monitor.doctor import CheckResult
 from gdut_grade_monitor.gui_model import filter_grades, grade_analytics, grade_table_rows, recent_change_rows, semester_options
 from gdut_grade_monitor.gui_model import status_summary
-from gdut_grade_monitor.gui_model import doctor_table_rows, help_sections, onboarding_steps, setup_guidance
+from gdut_grade_monitor.gui_model import doctor_table_rows, first_run_wizard_pages, help_sections, onboarding_steps, setup_guidance
 
 
 class GuiModelTests(unittest.TestCase):
@@ -100,6 +100,22 @@ class GuiModelTests(unittest.TestCase):
         self.assertIn("建立成绩基线", text)
         self.assertIn("第一次不会提醒", text)
         self.assertIn("后台自动提醒", text)
+        self.assertIn("默认每 30 分钟", text)
+
+    def test_first_run_wizard_pages_walk_user_to_setup(self):
+        pages = first_run_wizard_pages()
+        text = "\n".join(f"{page['title']} {page['body']} {' '.join(page['items'])}" for page in pages)
+
+        self.assertEqual(pages[0]["title"], "欢迎使用 GDUT 成绩提醒")
+        self.assertEqual(pages[-1]["primary_action"], "开始一键配置")
+        self.assertIn("严格只读", text)
+        self.assertIn("密码不会上传", text)
+        self.assertIn("第一次不会提醒", text)
+        self.assertIn("总览", text)
+        self.assertIn("成绩", text)
+        self.assertIn("提醒历史", text)
+        self.assertIn("设置", text)
+        self.assertIn("环境检查", text)
         self.assertIn("默认每 30 分钟", text)
 
     def test_help_sections_cover_usage_privacy_and_recovery(self):
