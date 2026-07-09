@@ -57,4 +57,4 @@
 - [ ] `README.md`
 - [ ] `PRIVACY.md`
 - [ ] `CHANGELOG.md`
-- [ ] `RELEASE_NOTES_v0.3.2.md`
+- [ ] `RELEASE_NOTES_v0.3.3.md`

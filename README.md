@@ -2,7 +2,7 @@
 
 广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
 
-![Version](https://img.shields.io/badge/version-0.3.2-blue)
+![Version](https://img.shields.io/badge/version-0.3.3-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -14,7 +14,7 @@
 
 - `GDUTGradeMonitor-Setup.exe`：安装版，推荐大多数用户使用。
 - `GDUTGradeMonitor-portable.zip`：便携版，解压后双击 `GDUTGradeMonitor.exe` 即可运行。
-- `SHA256SUMS.txt`：安装包和便携包的 SHA256 校验值，用于确认下载文件完整。
+- `SHA256SUMS.txt`：安装包、便携包和可选小补丁的 SHA256 校验值，用于确认下载文件完整。
 
 Windows 可能提示“未知发布者”，这是因为当前版本还没有代码签名证书。确认来源是本仓库 Release 后再运行。
 
@@ -111,7 +111,7 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 
 所有常用操作都可以在 GUI 中完成，不需要打开终端。
 
-下载后如需校验文件完整性，可在 Release 中同时下载 `SHA256SUMS.txt`，用 PowerShell 的 `Get-FileHash` 对比安装包或便携包的 SHA256 值。
+下载后如需校验文件完整性，可在 Release 中同时下载 `SHA256SUMS.txt`，用 PowerShell 的 `Get-FileHash` 对比安装包、便携包或小补丁的 SHA256 值。
 
 如果只是小修复，Release 可能同时提供 `GDUTGradeMonitor-patch-v旧版本-to-v新版本.zip` 和同名 `.json` 补丁清单。已安装的打包版用户在“设置 -> 检查更新”里可以直接选择“安装小补丁”，程序会先校验补丁 SHA256，再短暂关闭、替换变化文件并重新启动。源码运行版不会自动应用补丁，需要拉取源码或下载完整包。
 

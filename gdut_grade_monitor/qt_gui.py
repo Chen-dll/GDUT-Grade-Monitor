@@ -12,6 +12,7 @@ from PySide6.QtCore import QLockFile, QMarginsF, QObject, Qt, QTimer, QUrl, Sign
 from PySide6.QtGui import (
     QAction,
     QColor,
+    QCloseEvent,
     QDesktopServices,
     QFont,
     QIcon,
@@ -1263,6 +1264,7 @@ class GradeMonitorQtApp(QMainWindow):
         self._setup_progress_timer: QTimer | None = None
         self._setup_progress_index = 0
         self._busy_progress: QProgressDialog | None = None
+        self._force_quit = False
         self.setWindowTitle(f"GDUT 成绩提醒 v{APP_VERSION}")
         self.setWindowIcon(QIcon(str(app_icon_path())))
         self.setMinimumSize(1060, 640)
@@ -1923,7 +1925,7 @@ class GradeMonitorQtApp(QMainWindow):
         log_action = QAction("查看日志", self)
         log_action.triggered.connect(self.open_log_file)
         quit_action = QAction("退出", self)
-        quit_action.triggered.connect(QApplication.instance().quit)
+        quit_action.triggered.connect(self.quit_application)
         menu.addAction(show_action)
         menu.addAction(status_action)
         menu.addAction(check_action)
@@ -1936,6 +1938,52 @@ class GradeMonitorQtApp(QMainWindow):
         menu.addAction(quit_action)
         self.tray.setContextMenu(menu)
         self.tray.show()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self._force_quit:
+            event.accept()
+            return
+
+        if self.tray:
+            box = QMessageBox(self)
+            box.setWindowTitle("关闭 GDUT 成绩提醒")
+            box.setIcon(QMessageBox.Question)
+            box.setText("你想把程序最小化到托盘，还是直接退出？")
+            box.setInformativeText("最小化到托盘后，后台提醒会继续运行；直接退出会停止当前进程。")
+            minimize_button = box.addButton("最小化到托盘", QMessageBox.AcceptRole)
+            quit_button = box.addButton("退出程序", QMessageBox.DestructiveRole)
+            cancel_button = box.addButton("取消", QMessageBox.RejectRole)
+            box.setDefaultButton(minimize_button)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is minimize_button:
+                event.ignore()
+                self.hide()
+                self.tray.showMessage("GDUT 成绩提醒", "已最小化到托盘，后台提醒仍会继续。", QSystemTrayIcon.Information, 3000)
+                return
+            if clicked is quit_button:
+                self._force_quit = True
+                event.accept()
+                return
+            event.ignore()
+            return
+
+        result = QMessageBox.question(
+            self,
+            "退出 GDUT 成绩提醒",
+            "系统托盘不可用，关闭窗口将退出程序并停止当前后台提醒。\n\n确定退出吗？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if result == QMessageBox.Yes:
+            self._force_quit = True
+            event.accept()
+        else:
+            event.ignore()
+
+    def quit_application(self) -> None:
+        self._force_quit = True
+        QApplication.quit()
 
     def open_runtime_status(self) -> None:
         self.showNormal()
@@ -2509,6 +2557,7 @@ class GradeMonitorQtApp(QMainWindow):
         if confirm != QMessageBox.Yes:
             return
         launch_patch_apply(plan)
+        self._force_quit = True
         QApplication.quit()
 
     def export_diagnostics(self) -> None:

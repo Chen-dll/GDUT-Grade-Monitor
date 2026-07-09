@@ -56,6 +56,7 @@ class PrivacyAndReleaseDocsTests(unittest.TestCase):
         self.assertIn("Get-FileHash", checksum_script)
         self.assertIn("GDUTGradeMonitor-Setup.exe", checksum_script)
         self.assertIn("GDUTGradeMonitor-portable.zip", checksum_script)
+        self.assertIn("GDUTGradeMonitor-patch-v*-to-v*.*", checksum_script)
 
     def test_portable_build_includes_user_docs(self):
         text = Path("scripts/build_exe.ps1").read_text(encoding="utf-8")

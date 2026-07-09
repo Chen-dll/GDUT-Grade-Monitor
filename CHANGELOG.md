@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3 - 2026-07-09
+
+### Changed
+
+- Closing the main window now asks whether to minimize to the system tray or exit the program, preventing accidental shutdown of the current reminder process.
+- The tray menu "退出" action and patch-update restart path now bypass the close prompt intentionally so explicit exit/restart flows stay smooth.
+
 ## 0.3.2 - 2026-07-09
 
 ### Added

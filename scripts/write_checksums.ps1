@@ -16,7 +16,13 @@ try {
     throw "Cannot write SHA256SUMS.txt because release asset is missing: $($missing -join ', ')"
   }
 
-  $lines = foreach ($target in $targets) {
+  $optionalPatchAssets = Get-ChildItem -LiteralPath $DistDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "GDUTGradeMonitor-patch-v*-to-v*.*" -and ($_.Extension -in @(".zip", ".json")) } |
+    Sort-Object Name
+
+  $allTargets = @($targets) + @($optionalPatchAssets.FullName)
+
+  $lines = foreach ($target in $allTargets) {
     $file = Get-Item -LiteralPath $target
     $hash = Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256
     "$($hash.Hash.ToLowerInvariant())  $($file.Name)"
