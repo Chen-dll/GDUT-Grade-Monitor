@@ -192,6 +192,13 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("现在已经可以后台提醒了", complete_block)
         self.assertIn("首次配置已完成", complete_block)
 
+    def test_qt_gui_mentions_repair_startup_wording(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+
+        self.assertIn("安装/修复自启动", text)
+        self.assertIn("修复自启动", text)
+        self.assertIn("install_startup", text)
+
     def test_dashboard_keeps_first_run_guide_out_of_main_overview(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
         dashboard_block = text.split("def _dashboard_page", 1)[1].split("def _runtime_status_card", 1)[0]

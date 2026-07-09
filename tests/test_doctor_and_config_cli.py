@@ -137,6 +137,15 @@ class ConfigCliTests(unittest.TestCase):
             self.assertTrue(output.exists())
             self.assertIn(str(output), result.output)
 
+    def test_task_install_reports_run_key_fallback(self):
+        runner = CliRunner()
+        result_obj = type("InstallResult", (), {"mode": "run-key", "returncode": 0, "stdout": "", "stderr": ""})()
+        with patch("gdut_grade_monitor.cli.install_task_or_startup", return_value=result_obj):
+            result = runner.invoke(main, ["task", "install"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Run", result.output)
+
 
 if __name__ == "__main__":
     unittest.main()

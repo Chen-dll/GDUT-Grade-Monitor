@@ -152,9 +152,10 @@ def status_center_rows(config: dict, state: dict, startup_installed: bool, now_i
     interval = int(config.get("poll_interval_minutes", 30))
 
     status_labels = {
-        "ok": ("运行正常", "上次只读检查已完成。", "ok"),
+        "ok": ("后台正常", "最近一次检查完成。", "ok"),
         "paused": ("暂停中", "自动后台检查已暂停，手动立即检查仍可使用。", "warning"),
-        "error": ("需要处理", "上次检查遇到问题，可重新登录或导出诊断包。", "error"),
+        "error": ("检查失败", "后台检查遇到问题。", "error"),
+        "notification_failed": ("通知异常", "成绩检查已完成，但至少一个通知渠道发送失败。", "warning"),
         "idle": ("等待配置", "完成一键配置后会开始后台提醒。", "warning"),
     }
     status_value, status_detail, status_tone = status_labels.get(raw_status, (str(raw_status), "查看日志或诊断包了解详情。", "warning"))
@@ -182,13 +183,18 @@ def status_center_rows(config: dict, state: dict, startup_installed: bool, now_i
         {
             "label": "后台自启动",
             "value": "已开启" if startup_installed else "未开启",
-            "detail": "Windows 登录后会自动后台检查。" if startup_installed else "建议在设置页安装自启动。",
+            "detail": "Windows 登录后会自动后台检查。" if startup_installed else "建议在设置页安装/修复自启动。",
             "tone": "ok" if startup_installed else "warning",
         },
     ]
-    last_error = str(state.get("last_error", "") or "").strip()
-    if last_error:
-        rows.append({"label": "最近错误", "value": last_error, "detail": "可重新登录、打开环境检查或导出诊断包。", "tone": "error"})
+    failure_count = int(monitor.get("consecutive_failures", 0) or 0)
+    summary = str(monitor.get("last_error_summary", "") or state.get("last_error", "") or "").strip()
+    action = str(monitor.get("last_error_action", "") or "可重新登录、打开环境检查或导出诊断包。").strip()
+    if summary:
+        value = summary
+        if failure_count >= 3:
+            value = f"连续 {failure_count} 次失败: {summary}"
+        rows.append({"label": "最近错误", "value": value, "detail": action, "tone": "error" if raw_status == "error" else "warning"})
     return rows
 
 
@@ -313,7 +319,7 @@ def setup_guidance(startup_installed: bool, config: dict, state: dict, required_
         return {
             "tone": "warning",
             "title": "需要首次配置",
-            "body": "点击一键配置本机，程序会引导你输入学号和密码、登录教务系统、建立成绩基线，并安装自启动。",
+            "body": "点击一键配置本机，程序会引导你输入学号和密码、登录教务系统、建立成绩基线，并安装/修复自启动。",
             "primary_action": "一键配置本机",
         }
     if not state.get("grades"):
@@ -327,8 +333,8 @@ def setup_guidance(startup_installed: bool, config: dict, state: dict, required_
         return {
             "tone": "warning",
             "title": "建议开启后台提醒",
-            "body": "成绩基线已建立，但还没有安装自启动。安装后每次登录 Windows 会自动后台检查。",
-            "primary_action": "安装自启动",
+            "body": "成绩基线已建立，但还没有安装/修复自启动。安装后每次登录 Windows 会自动后台检查。",
+            "primary_action": "安装/修复自启动",
         }
 
     interval = int(config.get("poll_interval_minutes", 30))
@@ -395,7 +401,7 @@ def first_run_wizard_pages() -> list[dict[str, object]]:
                 "总览：查看后台状态、下一次检查频率和最近变化。",
                 "成绩：查看本地成绩快照、绩点统计和本地成绩单导出。",
                 "提醒历史：查看已经提醒过的新成绩或成绩变化。",
-                "设置：重新登录、调整频率、安装自启动、检查更新。",
+                "设置：重新登录、调整频率、安装/修复自启动、检查更新。",
                 "环境检查：排查浏览器、配置、数据目录和自启动问题。",
             ],
             "primary_action": "下一步",
@@ -524,7 +530,7 @@ def _doctor_action(result: CheckResult) -> str:
     if "configuration" in name:
         return "点击一键配置本机，保存账号并建立基线。"
     if "autostart" in name:
-        return "点击安装自启动，开启登录后后台提醒。"
+        return "点击安装/修复自启动，开启登录后后台提醒。"
     if "startup residue" in name:
         return "打开设置页的卸载辅助，点击一键清理残留。"
     if "data directory" in name:

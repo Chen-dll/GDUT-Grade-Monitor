@@ -149,7 +149,7 @@ class GradeMonitorApp:
         ttk.Button(toolbar, text="一键配置本机", command=self.one_click_setup).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(toolbar, text="立即检查", command=self.check_now).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(toolbar, text="登录/初始化", command=self.setup_login).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(toolbar, text="安装自启动", command=self.install_startup).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(toolbar, text="安装/修复自启动", command=self.install_startup).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(toolbar, text="取消自启动", command=self.uninstall_startup).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(toolbar, text="打开数据目录", command=self.open_data_dir).pack(side=tk.LEFT)
         ttk.Label(toolbar, text="频率(分钟):").pack(side=tk.LEFT, padx=(18, 4))
@@ -290,7 +290,7 @@ class GradeMonitorApp:
             self.refresh_doctor()
         elif action == "立即检查":
             self.check_now()
-        elif action == "安装自启动":
+        elif action in ("安装自启动", "安装/修复自启动"):
             self.install_startup()
         else:
             self.one_click_setup()
@@ -314,7 +314,7 @@ class GradeMonitorApp:
         self.refresh_doctor()
         self.set_history(load_state(self.paths))
         if result.startup_mode == "failed":
-            self.message_var.set("配置完成，但自启动安装失败；可稍后手动点击安装自启动。")
+            self.message_var.set("配置完成，但自启动安装失败；可稍后手动点击安装/修复自启动。")
             messagebox.showwarning("一键配置本机", "成绩基线已建立，但自启动安装失败。请在主界面手动重试。")
             return
         startup_text = "已开启自启动" if result.startup_mode != "skipped" else "未开启自启动"

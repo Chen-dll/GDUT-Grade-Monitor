@@ -1696,8 +1696,9 @@ class GradeMonitorQtApp(QMainWindow):
         login = QPushButton("重新登录/初始化")
         login.setObjectName("secondaryButton")
         login.clicked.connect(self.setup_login)
-        install = QPushButton("安装自启动")
+        install = QPushButton("安装/修复自启动")
         install.setObjectName("secondaryButton")
+        install.setToolTip("修复自启动会重新写入当前用户启动项，不会删除本地成绩或凭据。")
         install.clicked.connect(self.install_startup)
         uninstall = QPushButton("取消自启动")
         uninstall.setObjectName("secondaryButton")
@@ -2167,7 +2168,7 @@ class GradeMonitorQtApp(QMainWindow):
             self._set_page(4)
         elif action == "立即检查":
             self.check_now()
-        elif action == "安装自启动":
+        elif action in ("安装自启动", "安装/修复自启动"):
             self.install_startup()
         else:
             self.one_click_setup()

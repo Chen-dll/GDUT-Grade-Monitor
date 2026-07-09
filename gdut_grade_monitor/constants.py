@@ -1,7 +1,7 @@
 from pathlib import Path
 
 APP_NAME = "GDUT Grade Monitor"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.3.1"
 APP_AUTHOR = "Chen-Dll"
 KEYRING_SERVICE = "gdut-grade-monitor"
 DEFAULT_BASE_URL = "https://jxfw.gdut.edu.cn"

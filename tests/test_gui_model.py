@@ -66,7 +66,7 @@ class GuiModelTests(unittest.TestCase):
         self.assertEqual(guidance["primary_action"], "一键配置本机")
         self.assertIn("输入学号和密码", guidance["body"])
         self.assertIn("建立成绩基线", guidance["body"])
-        self.assertIn("安装自启动", guidance["body"])
+        self.assertIn("安装/修复自启动", guidance["body"])
 
     def test_setup_guidance_prioritizes_required_environment_failure(self):
         config = {"student_id": "3210000000", "poll_interval_minutes": 30}
@@ -120,8 +120,44 @@ class GuiModelTests(unittest.TestCase):
         rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-08T12:00:00")
         text = "\n".join(f"{row['label']} {row['value']} {row['detail']}" for row in rows)
 
-        self.assertIn("后台状态 运行正常", text)
+        self.assertIn("后台状态 后台正常", text)
         self.assertIn("下次检查 每 30 分钟", text)
+
+    def test_status_center_rows_warns_after_three_failures(self):
+        config = {"student_id": "3210000000", "poll_interval_minutes": 30}
+        state = {
+            "last_check_status": "error",
+            "monitor": {
+                "consecutive_failures": 3,
+                "last_error_kind": "login_expired",
+                "last_error_summary": "登录状态可能已过期",
+                "last_error_action": "请重新登录",
+            },
+        }
+
+        rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-09T12:00:00")
+
+        joined = " ".join(row["value"] + row["detail"] for row in rows)
+        self.assertIn("连续 3 次", joined)
+        self.assertIn("请重新登录", joined)
+
+    def test_status_center_rows_shows_notification_issue_as_warning(self):
+        config = {"student_id": "3210000000", "poll_interval_minutes": 30}
+        state = {
+            "last_check_status": "notification_failed",
+            "monitor": {
+                "last_success_at": "2026-07-09T12:00:00",
+                "last_error_kind": "notification_failed",
+                "last_error_summary": "通知渠道发送失败",
+                "last_error_action": "请检查失败渠道",
+            },
+        }
+
+        rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-09T12:00:00")
+
+        status = rows[0]
+        self.assertEqual(status["tone"], "warning")
+        self.assertIn("通知", status["value"])
 
     def test_onboarding_steps_explain_first_run_flow(self):
         text = "\n".join(f"{step['title']} {step['body']}" for step in onboarding_steps())

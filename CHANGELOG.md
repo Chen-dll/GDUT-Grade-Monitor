@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 - 2026-07-09
+
+### Added
+
+- Added structured runtime health for background grade checks.
+- Added startup target health detection for Startup folder and HKCU Run entries.
+- Added sanitized runtime health summaries to diagnostics exports.
+
+### Changed
+
+- Notification-channel failures no longer roll back successful grade snapshot updates.
+- Dashboard status now explains repeated failures, login/session issues, and notification delivery problems more clearly.
+- Startup actions now use clearer "安装/修复自启动" wording.
+
 ## 0.3.0 - 2026-07-09
 
 ### Added
