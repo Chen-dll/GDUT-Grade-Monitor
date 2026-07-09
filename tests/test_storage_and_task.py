@@ -144,6 +144,22 @@ class StorageAndTaskTests(unittest.TestCase):
         self.assertIn('""F:/Program Files/Python314/pythonw.exe"" -m gdut_grade_monitor monitor', script)
         self.assertIn(", 0, False", script)
 
+    def test_install_startup_script_writes_utf16_for_chinese_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            startup = Path(tmp) / "Startup"
+            result = install_task_or_startup(
+                startup_dir=startup,
+                pythonw="F:/Desktop Folder/大学/Python/pythonw.exe",
+                prefer_startup=True,
+            )
+            script = startup / "GDUT Grade Monitor.vbs"
+
+            self.assertEqual(result.mode, "startup")
+            self.assertTrue(script.read_bytes().startswith(b"\xff\xfe"))
+            self.assertIn("大学", script.read_text(encoding="utf-16"))
+            report = startup_health(startup_dir=startup, include_schtasks=False)
+            self.assertIn("大学", report.entries[0].target)
+
     def test_startup_script_target_extracts_packaged_exe_path(self):
         script = 'Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run """F:/Apps/GDUTGradeMonitor/GDUTGradeMonitor.exe"" --monitor", 0, False\n'
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.6 - 2026-07-09
+
+### Fixed
+
+- Fixed Startup-folder VBS entries failing on Chinese install paths with Windows Script Host error `80070002`.
+- Startup fallback scripts are now written as UTF-16 with BOM so Windows Script Host preserves non-ASCII paths.
+- Startup health checks now read both new UTF-16 scripts and older UTF-8 scripts, so stale-entry repair remains compatible.
+
 ## 0.3.5 - 2026-07-09
 
 ### Fixed

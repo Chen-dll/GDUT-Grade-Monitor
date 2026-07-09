@@ -213,12 +213,23 @@ def run_key_exists() -> bool:
 def install_startup_script(startup_dir: Path | None = None, pythonw: str | None = None) -> TaskInstallResult:
     directory = startup_dir or globals()["startup_dir"]()
     directory.mkdir(parents=True, exist_ok=True)
-    startup_script_path(directory).write_text(build_startup_script(pythonw), encoding="utf-8")
+    startup_script_path(directory).write_text(build_startup_script(pythonw), encoding="utf-16")
     return TaskInstallResult(mode="startup", returncode=0)
 
 
 def startup_script_exists(directory: Path | None = None) -> bool:
     return startup_script_path(directory).exists()
+
+
+def read_startup_script(script: Path) -> str:
+    data = script.read_bytes()
+    encodings = ["utf-16", "utf-8-sig", "utf-8", locale.getpreferredencoding(False)]
+    for encoding in encodings:
+        try:
+            return data.decode(encoding)
+        except UnicodeError:
+            continue
+    return data.decode("utf-8", errors="ignore")
 
 
 def startup_script_target(script_text: str) -> Path | None:
@@ -262,7 +273,7 @@ def startup_script_is_stale(directory: Path | None = None) -> bool:
     try:
         if not script.exists():
             return False
-        target = startup_script_target(script.read_text(encoding="utf-8", errors="ignore"))
+        target = startup_script_target(read_startup_script(script))
     except OSError:
         return False
     return target is not None and not target.exists()
@@ -281,7 +292,7 @@ def startup_health(startup_dir: Path | None = None, include_schtasks: bool = Fal
     script = startup_script_path(startup_dir)
     if startup_script_exists(startup_dir):
         try:
-            target = startup_script_target(script.read_text(encoding="utf-8", errors="ignore"))
+            target = startup_script_target(read_startup_script(script))
         except OSError:
             target = None
         entry = _entry_health("startup", target)
