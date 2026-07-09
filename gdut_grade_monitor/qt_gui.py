@@ -2314,7 +2314,7 @@ class GradeMonitorQtApp(QMainWindow):
         dialog.exec()
 
     def install_startup(self) -> None:
-        result = install_task_or_startup(prefer_startup=True)
+        result = install_task_or_startup()
         if result.returncode == 0:
             self.refresh_status()
             message = "已安装用户启动项，登录 Windows 后会自动后台检查。"

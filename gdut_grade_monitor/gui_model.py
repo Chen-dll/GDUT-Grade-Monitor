@@ -159,6 +159,18 @@ def status_center_rows(config: dict, state: dict, startup_installed: bool, now_i
         "idle": ("等待配置", "完成一键配置后会开始后台提醒。", "warning"),
     }
     status_value, status_detail, status_tone = status_labels.get(raw_status, (str(raw_status), "查看日志或诊断包了解详情。", "warning"))
+    if raw_status == "error":
+        kind_labels = {
+            "login_expired": ("登录过期", "请重新登录/初始化，完成统一身份认证。", "error"),
+            "network": ("网络异常", "请检查网络、校园网或代理设置，稍后会自动重试。", "warning"),
+            "school_system": ("学校系统异常", "可能是教务系统临时异常，请稍后重试或导出诊断包。", "warning"),
+            "browser_missing": ("浏览器组件缺失", "请在设置页重新进行一键配置，或安装 Chrome/Edge。", "error"),
+            "autostart_broken": ("自启动路径失效", "请在设置页点击安装/修复自启动。", "warning"),
+        }
+        status_value, status_detail, status_tone = kind_labels.get(
+            str(monitor.get("last_error_kind", "") or ""),
+            (status_value, status_detail, status_tone),
+        )
     if paused_until:
         status_value = "暂停中"
         status_detail = "自动后台检查已暂停，手动立即检查仍可使用。"

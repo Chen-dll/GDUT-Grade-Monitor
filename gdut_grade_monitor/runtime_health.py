@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import re
 
 from requests import ConnectionError, Timeout
 
-from .auth import PlaywrightBrowserMissingError
+from .auth import PlaywrightBrowserMissingError, SessionExpiredError
 from .client import GradeResponseError
+
+SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(password|passwd|cookie|cookies|token|sendkey|send_key|secret|authorization|jsessionid)\s*[:=]\s*[^;\s,\]}]+"
+)
+BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 
 
 @dataclass(frozen=True)
@@ -23,6 +29,8 @@ def now_iso() -> str:
 
 def classify_error(exc: BaseException) -> RuntimeIssue:
     text = str(exc)
+    if isinstance(exc, SessionExpiredError):
+        return RuntimeIssue("login_expired", "登录状态可能已过期", "请点击重新登录/初始化，完成统一身份认证。", "error")
     if isinstance(exc, PlaywrightBrowserMissingError):
         return RuntimeIssue("browser_missing", "浏览器组件缺失", "请在设置页重新进行一键配置，或安装 Chrome/Edge。", "error")
     if isinstance(exc, (Timeout, ConnectionError)):
@@ -88,6 +96,13 @@ def notification_issue() -> RuntimeIssue:
     return RuntimeIssue("notification_failed", "通知渠道发送失败", "成绩检查已完成，请到多设备通知里检查失败渠道。")
 
 
+def redact_sensitive_detail(detail: object) -> str:
+    text = str(detail or "")
+    text = SENSITIVE_ASSIGNMENT_RE.sub("<redacted>", text)
+    text = BEARER_RE.sub("Bearer <redacted>", text)
+    return text
+
+
 def record_notification_failure(state: dict, *, checked_at: str, detail: str) -> None:
     issue = notification_issue()
     monitor = monitor_state(state)
@@ -95,7 +110,7 @@ def record_notification_failure(state: dict, *, checked_at: str, detail: str) ->
     monitor["last_error_kind"] = issue.kind
     monitor["last_error_summary"] = issue.summary
     monitor["last_error_action"] = issue.action
-    monitor["last_notification_error"] = detail
+    monitor["last_notification_error"] = redact_sensitive_detail(detail)
     state["last_check_status"] = "notification_failed"
     state["last_error"] = issue.summary
 

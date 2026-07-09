@@ -194,10 +194,13 @@ class QtGuiPackagingTests(unittest.TestCase):
 
     def test_qt_gui_mentions_repair_startup_wording(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        install_block = text.split("def install_startup", 1)[1].split("def uninstall_startup", 1)[0]
 
         self.assertIn("安装/修复自启动", text)
         self.assertIn("修复自启动", text)
         self.assertIn("install_startup", text)
+        self.assertIn("install_task_or_startup()", install_block)
+        self.assertNotIn("prefer_startup=True", install_block)
 
     def test_dashboard_keeps_first_run_guide_out_of_main_overview(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")

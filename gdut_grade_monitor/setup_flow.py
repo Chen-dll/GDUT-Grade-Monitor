@@ -47,7 +47,7 @@ def run_first_run_setup(
     auth_manager = auth_manager or AuthManager(paths)
     fetcher_factory = fetcher_factory or (lambda session: GradeApiClient(session))
     notifier = notifier or build_notifier(paths)
-    startup_installer = startup_installer or (lambda: install_task_or_startup(prefer_startup=True))
+    startup_installer = startup_installer or install_task_or_startup
 
     credential_store.set_credentials(student_id, password)
 

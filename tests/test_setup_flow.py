@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from gdut_grade_monitor.grades import normalize_grade
 from gdut_grade_monitor.setup_flow import run_first_run_setup
@@ -99,6 +100,27 @@ class SetupFlowTests(unittest.TestCase):
 
             self.assertEqual(result.startup_mode, "skipped")
             self.assertFalse(load_config(paths)["startup_enabled"])
+
+    def test_first_run_setup_default_autostart_uses_full_fallback_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            with patch("gdut_grade_monitor.setup_flow.install_task_or_startup") as install_mock:
+                install_mock.return_value = TaskInstallResult(mode="run-key", returncode=0)
+
+                result = run_first_run_setup(
+                    paths=paths,
+                    student_id="3210000000",
+                    password="secret123",
+                    interval_minutes=30,
+                    credential_store=FakeCredentialStore(),
+                    auth_manager=FakeAuthManager(),
+                    fetcher_factory=lambda session: FakeFetcher([]),
+                    notifier=FakeNotifier(),
+                )
+
+            install_mock.assert_called_once_with()
+            self.assertEqual(result.startup_mode, "run-key")
+            self.assertTrue(load_config(paths)["startup_enabled"])
 
 
 if __name__ == "__main__":

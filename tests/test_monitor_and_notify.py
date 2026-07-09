@@ -46,6 +46,12 @@ class RaisingNotifier(ChangeAwareNotifier):
         raise RuntimeError("pushplus failed")
 
 
+class SecretRaisingNotifier(ChangeAwareNotifier):
+    def send_change(self, change):
+        super().send_change(change)
+        raise RuntimeError("pushplus failed token=abc123SECRET bearer qwertySECRET")
+
+
 class MonitorAndNotifyTests(unittest.TestCase):
     def test_monitor_baselines_first_run_and_notifies_new_grade_later(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -215,6 +221,32 @@ class MonitorAndNotifyTests(unittest.TestCase):
             self.assertEqual(state["last_check_status"], "notification_failed")
             self.assertEqual(state["monitor"]["last_error_kind"], "notification_failed")
             self.assertIn("last_notification_failure_at", state["monitor"])
+
+    def test_notification_exception_details_are_redacted_before_state_and_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            baseline = GradeMonitor(
+                paths=paths,
+                fetcher=FakeFetcher([{"xnxqdm": "202502", "kcbh": "MATH", "kcmc": "高数", "zcj": "88"}]),
+                notifier=Mock(),
+            )
+            baseline.run_once()
+            changed = GradeMonitor(
+                paths=paths,
+                fetcher=FakeFetcher([{"xnxqdm": "202502", "kcbh": "MATH", "kcmc": "高数", "zcj": "89"}]),
+                notifier=SecretRaisingNotifier(),
+            )
+
+            with self.assertLogs("gdut_grade_monitor", level="WARNING") as logs:
+                changed.run_once()
+
+            state_text = str(load_state(paths))
+            log_text = "\n".join(logs.output)
+            self.assertNotIn("abc123SECRET", state_text)
+            self.assertNotIn("qwertySECRET", state_text)
+            self.assertNotIn("abc123SECRET", log_text)
+            self.assertNotIn("qwertySECRET", log_text)
+            self.assertIn("<redacted>", state_text)
 
 
 if __name__ == "__main__":

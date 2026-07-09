@@ -159,6 +159,22 @@ class GuiModelTests(unittest.TestCase):
         self.assertEqual(status["tone"], "warning")
         self.assertIn("通知", status["value"])
 
+    def test_status_center_rows_uses_structured_error_kind_for_primary_status(self):
+        config = {"student_id": "3210000000", "poll_interval_minutes": 30}
+        state = {
+            "last_check_status": "error",
+            "monitor": {
+                "last_error_kind": "network",
+                "last_error_summary": "网络连接异常",
+                "last_error_action": "请检查网络",
+            },
+        }
+
+        rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-09T12:00:00")
+
+        self.assertEqual(rows[0]["value"], "网络异常")
+        self.assertIn("网络", rows[0]["detail"])
+
     def test_onboarding_steps_explain_first_run_flow(self):
         text = "\n".join(f"{step['title']} {step['body']}" for step in onboarding_steps())
 

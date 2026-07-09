@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 from requests import ConnectionError, Timeout
 
-from gdut_grade_monitor.auth import PlaywrightBrowserMissingError
+from gdut_grade_monitor.auth import PlaywrightBrowserMissingError, SessionExpiredError
 from gdut_grade_monitor.client import GradeResponseError
 from gdut_grade_monitor.runtime_health import classify_error
 
@@ -24,6 +24,12 @@ class RuntimeHealthTests(unittest.TestCase):
 
         self.assertEqual(result.kind, "login_expired")
         self.assertIn("重新登录", result.action)
+
+    def test_classifies_explicit_session_expired_as_login_expired(self):
+        result = classify_error(SessionExpiredError("expired"))
+
+        self.assertEqual(result.kind, "login_expired")
+        self.assertEqual(result.severity, "error")
 
     def test_classifies_network_errors(self):
         for error in [Timeout("timed out"), ConnectionError("network down")]:

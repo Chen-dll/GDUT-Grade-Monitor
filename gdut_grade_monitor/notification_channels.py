@@ -66,7 +66,7 @@ NOTIFICATION_CHANNEL_LABELS = {
 
 
 def notification_error_message(exc: Exception) -> str:
-    message = str(exc)
+    message = _redact_notification_detail(str(exc))
     lower = message.lower()
     if isinstance(exc, requests.Timeout):
         return "通知发送超时。请检查网络是否能访问对应通知服务，稍后再试。"
@@ -84,7 +84,7 @@ def notification_error_message(exc: Exception) -> str:
     if isinstance(exc, smtplib.SMTPConnectError):
         return "SMTP 服务器连接失败。请检查服务器地址、端口和连接安全类型。"
     if isinstance(exc, smtplib.SMTPException):
-        return f"邮件发送失败：{message}\n\n请检查 SMTP 服务器、端口、授权码、发件人和收件人。"
+        return "邮件发送失败。请检查 SMTP 服务器、端口、授权码、发件人和收件人。"
     if "pushplus token is not configured" in lower:
         return "PushPlus token 尚未配置。请点“指引”复制 token，填入后保存。"
     if "server chan sendkey is not configured" in lower:
@@ -95,7 +95,13 @@ def notification_error_message(exc: Exception) -> str:
         return "SMTP 配置不完整。请填写 SMTP 服务器、发件人和收件人。"
     if "keyring is required" in lower:
         return "系统凭据服务不可用，无法安全保存通知密钥。请检查 Windows Credential Manager 是否正常。"
-    return f"{type(exc).__name__}: {exc}"
+    return f"{type(exc).__name__}: {message}"
+
+
+def _redact_notification_detail(text: str) -> str:
+    from .runtime_health import redact_sensitive_detail
+
+    return redact_sensitive_detail(text)
 
 
 class NotificationChannel(Protocol):
@@ -309,7 +315,7 @@ class MultiDeviceNotifier:
             if not self.suppress_errors:
                 raise
             logger = self.logger or logging.getLogger("gdut_grade_monitor")
-            logger.warning("Notification channel %s failed: %s", channel_id, exc)
+            logger.warning("Notification channel %s failed: %s", channel_id, notification_error_message(exc))
             return NotificationTestResult(
                 channel_id=channel_id,
                 label=NOTIFICATION_CHANNEL_LABELS.get(channel_id, channel_id),

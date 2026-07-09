@@ -6,8 +6,9 @@ from datetime import datetime
 from typing import Protocol
 
 from .grades import diff_grades
+from .notification_channels import notification_error_message
 from .notify import format_change_message
-from .runtime_health import now_iso, record_monitor_failure, record_monitor_success, record_notification_failure
+from .runtime_health import now_iso, record_monitor_failure, record_monitor_success, record_notification_failure, redact_sensitive_detail
 from .storage import AppPaths, load_config, load_state, save_state
 
 
@@ -55,8 +56,8 @@ class GradeMonitor:
                 )
                 delivery_by_change.append(delivery)
             except Exception as exc:
-                detail = str(exc)
-                self.logger.warning("Notification failed: %s", exc)
+                detail = redact_sensitive_detail(notification_error_message(exc))
+                self.logger.warning("Notification failed: %s", detail)
                 notification_errors.append(detail)
                 delivery_by_change.append(
                     [{"channel_id": "unknown", "label": "通知渠道", "ok": False, "detail": detail}]
@@ -146,7 +147,7 @@ def _delivery_results(value) -> list[dict]:
             ok = bool(getattr(item, "ok", False))
             detail = str(getattr(item, "detail", ""))
         if channel_id:
-            rows.append({"channel_id": channel_id, "label": label, "ok": ok, "detail": detail})
+            rows.append({"channel_id": channel_id, "label": label, "ok": ok, "detail": redact_sensitive_detail(detail)})
     return rows
 
 
