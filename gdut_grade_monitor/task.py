@@ -223,7 +223,9 @@ def startup_script_exists(directory: Path | None = None) -> bool:
 
 def read_startup_script(script: Path) -> str:
     data = script.read_bytes()
-    encodings = ["utf-16", "utf-8-sig", "utf-8", locale.getpreferredencoding(False)]
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16")
+    encodings = ["utf-8-sig", "utf-8", locale.getpreferredencoding(False), "utf-16"]
     for encoding in encodings:
         try:
             return data.decode(encoding)

@@ -19,6 +19,7 @@ from gdut_grade_monitor.task import (
     install_task_or_startup,
     _run_schtasks,
     startup_health,
+    read_startup_script,
     startup_script_is_stale,
     startup_script_target,
     startup_script_exists,
@@ -167,6 +168,16 @@ class StorageAndTaskTests(unittest.TestCase):
             startup_script_target(script),
             Path("F:/Apps/GDUTGradeMonitor/GDUTGradeMonitor.exe"),
         )
+
+    def test_read_startup_script_reads_legacy_utf8_before_utf16_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "GDUT Grade Monitor.vbs"
+            script.write_text(
+                'Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run """F:/Apps/GDUTGradeMonitor/GDUTGradeMonitor.exe"" --monitor", 0, False\n',
+                encoding="utf-8",
+            )
+
+            self.assertIn("WshShell.Run", read_startup_script(script))
 
     def test_startup_script_is_stale_when_target_exe_was_deleted(self):
         with tempfile.TemporaryDirectory() as tmp:
