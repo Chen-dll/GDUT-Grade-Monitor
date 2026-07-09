@@ -58,6 +58,34 @@ class DoctorTests(unittest.TestCase):
             self.assertFalse(residue.required)
             self.assertIn("清理残留", residue.message)
 
+    def test_run_checks_warns_about_broken_autostart_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            broken = type("Health", (), {"ok": False, "message": "启动项路径失效，目标文件不存在。"})()
+            with patch("gdut_grade_monitor.doctor.startup_health", return_value=broken):
+                results = run_checks(paths=paths)
+
+        self.assertIn("Autostart health", [result.name for result in results])
+        row = next(result for result in results if result.name == "Autostart health")
+        self.assertFalse(row.ok)
+        self.assertFalse(row.required)
+        self.assertIn("路径失效", row.message)
+
+    def test_run_checks_warns_when_config_enabled_but_no_autostart_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            config = load_config(paths)
+            config["startup_enabled"] = True
+            save_config(paths, config)
+            healthy_empty = type("Health", (), {"ok": True, "message": "未检测到当前用户启动项。"})()
+            with patch("gdut_grade_monitor.doctor.autostart_exists", return_value=False):
+                with patch("gdut_grade_monitor.doctor.startup_health", return_value=healthy_empty):
+                    results = run_checks(paths=paths)
+
+        row = next(result for result in results if result.name == "Autostart health")
+        self.assertFalse(row.ok)
+        self.assertIn("配置显示已开启", row.message)
+
 
 class ConfigCliTests(unittest.TestCase):
     def test_config_show_outputs_non_sensitive_configuration(self):

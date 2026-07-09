@@ -44,8 +44,10 @@ def create_diagnostics_zip(
     output_path = output_path or _default_output_path(paths)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    config = _sanitize_config(load_config(paths))
-    state = _state_summary(load_state(paths))
+    raw_config = load_config(paths)
+    raw_state = load_state(paths)
+    config = _sanitize_config(raw_config)
+    state = _state_summary(raw_state)
     checks = list(check_results) if check_results is not None else run_checks(paths)
     manifest = {
         "app_version": APP_VERSION,
@@ -59,6 +61,7 @@ def create_diagnostics_zip(
         _write_json(archive, "manifest.json", manifest)
         _write_json(archive, "config.json", config)
         _write_json(archive, "state-summary.json", state)
+        _write_json(archive, "runtime-health.json", _runtime_health_summary(raw_config, raw_state))
         archive.writestr("doctor.txt", redact_text(render_results(checks)))
         if paths.log_file.exists():
             archive.writestr("logs/monitor.log", redact_text(paths.log_file.read_text(encoding="utf-8", errors="replace")))
@@ -83,9 +86,34 @@ def _sanitize_config(config: dict) -> dict:
             continue
         if lowered == "student_id":
             sanitized[key] = mask_student_id(str(value))
+        elif isinstance(value, dict):
+            sanitized[key] = _sanitize_config(value)
         else:
             sanitized[key] = value
     return sanitized
+
+
+def _runtime_health_summary(config: dict, state: dict) -> dict:
+    monitor = state.get("monitor", {}) if isinstance(state.get("monitor"), dict) else {}
+    notifications = config.get("notifications", {}) if isinstance(config.get("notifications"), dict) else {}
+    channels = {}
+    for channel_id, channel_config in notifications.items():
+        if isinstance(channel_config, dict):
+            channels[channel_id] = {
+                "enabled": bool(channel_config.get("enabled", False)),
+                "privacy": str(channel_config.get("privacy", "")),
+            }
+    return {
+        "student_id": mask_student_id(str(config.get("student_id", ""))),
+        "last_success_at": monitor.get("last_success_at", ""),
+        "last_failure_at": monitor.get("last_failure_at", ""),
+        "consecutive_failures": monitor.get("consecutive_failures", 0),
+        "last_error_kind": monitor.get("last_error_kind", ""),
+        "last_error_summary": monitor.get("last_error_summary", ""),
+        "last_error_action": monitor.get("last_error_action", ""),
+        "last_notification_failure_at": monitor.get("last_notification_failure_at", ""),
+        "notifications": channels,
+    }
 
 
 def _state_summary(state: dict) -> dict:

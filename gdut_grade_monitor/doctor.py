@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .auth import find_system_browser
 from .storage import AppPaths, load_config
-from .task import autostart_exists, startup_script_is_stale
+from .task import autostart_exists, startup_health, startup_script_is_stale
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ def run_checks(paths: AppPaths | None = None) -> list[CheckResult]:
         _check_data_dir(paths),
         _check_config(paths),
         _check_autostart(),
+        _check_autostart_health(paths),
         _check_startup_residue(),
     ]
     return results
@@ -105,6 +106,21 @@ def _check_config(paths: AppPaths) -> CheckResult:
 def _check_autostart() -> CheckResult:
     installed = autostart_exists()
     return CheckResult("Autostart", installed, "installed" if installed else "not installed", required=False)
+
+
+def _check_autostart_health(paths: AppPaths) -> CheckResult:
+    config = load_config(paths)
+    health = startup_health()
+    if not health.ok:
+        return CheckResult("Autostart health", False, health.message, required=False)
+    if config.get("startup_enabled") and not autostart_exists():
+        return CheckResult(
+            "Autostart health",
+            False,
+            "配置显示已开启自启动，但未检测到启动项；请在设置页点击安装/修复自启动。",
+            required=False,
+        )
+    return CheckResult("Autostart health", True, health.message, required=False)
 
 
 def _check_startup_residue() -> CheckResult:

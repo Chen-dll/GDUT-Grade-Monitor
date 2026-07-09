@@ -83,6 +83,50 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertNotIn("数据结构", combined)
             self.assertNotIn('"score"', combined)
 
+    def test_diagnostics_zip_contains_runtime_health_without_sensitive_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            paths.ensure()
+            save_config(
+                paths,
+                {
+                    "student_id": "3210000000",
+                    "password": "secret",
+                    "notifications": {"pushplus": {"enabled": True, "token": "abc", "privacy": "private"}},
+                },
+            )
+            save_state(
+                paths,
+                {
+                    "grades": {"202502|CS101|数据结构": {"course_name": "数据结构", "score": "95"}},
+                    "monitor": {
+                        "last_success_at": "2026-07-09T12:00:00",
+                        "last_failure_at": "2026-07-09T13:00:00",
+                        "consecutive_failures": 3,
+                        "last_error_kind": "login_expired",
+                        "last_error_summary": "登录状态可能已过期",
+                        "last_error_action": "请重新登录",
+                        "last_notification_error": "token abc failed",
+                    },
+                },
+            )
+
+            output = Path(tmp) / "diagnostics.zip"
+            create_diagnostics_zip(paths=paths, output_path=output, check_results=[])
+
+            with zipfile.ZipFile(output) as archive:
+                names = archive.namelist()
+                self.assertIn("runtime-health.json", names)
+                text = archive.read("runtime-health.json").decode("utf-8")
+
+            self.assertIn("login_expired", text)
+            self.assertIn("consecutive_failures", text)
+            self.assertNotIn("3210000000", text)
+            self.assertNotIn("secret", text)
+            self.assertNotIn("abc", text)
+            self.assertNotIn("数据结构", text)
+            self.assertNotIn("95", text)
+
 
 if __name__ == "__main__":
     unittest.main()

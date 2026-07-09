@@ -23,6 +23,21 @@ class TaskInstallResult:
     stderr: str = ""
 
 
+@dataclass(frozen=True)
+class StartupEntryHealth:
+    mode: str
+    target: str
+    target_exists: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class StartupHealth:
+    ok: bool
+    message: str
+    entries: list[StartupEntryHealth]
+
+
 def _hidden_subprocess_kwargs() -> dict:
     kwargs: dict = {}
     if sys.platform.startswith("win"):
@@ -211,6 +226,10 @@ def startup_script_target(script_text: str) -> Path | None:
     if not match:
         return None
     command = match.group(1).replace('""', '"').strip()
+    return _command_target(command)
+
+
+def _command_target(command: str) -> Path | None:
     if not command:
         return None
     if command.startswith('"'):
@@ -225,6 +244,19 @@ def startup_script_target(script_text: str) -> Path | None:
     return Path(executable)
 
 
+def run_key_target() -> Path | None:
+    if not sys.platform.startswith("win"):
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_READ) as key:
+            value, _kind = winreg.QueryValueEx(key, RUN_VALUE_NAME)
+    except OSError:
+        return None
+    return _command_target(str(value))
+
+
 def startup_script_is_stale(directory: Path | None = None) -> bool:
     script = startup_script_path(directory)
     try:
@@ -234,6 +266,36 @@ def startup_script_is_stale(directory: Path | None = None) -> bool:
     except OSError:
         return False
     return target is not None and not target.exists()
+
+
+def _entry_health(mode: str, target: Path | None) -> StartupEntryHealth | None:
+    if target is None:
+        return None
+    exists = target.exists()
+    message = "目标存在" if exists else f"目标不存在: {target}"
+    return StartupEntryHealth(mode=mode, target=str(target), target_exists=exists, message=message)
+
+
+def startup_health(startup_dir: Path | None = None, include_schtasks: bool = False) -> StartupHealth:
+    entries: list[StartupEntryHealth] = []
+    script = startup_script_path(startup_dir)
+    if startup_script_exists(startup_dir):
+        try:
+            target = startup_script_target(script.read_text(encoding="utf-8", errors="ignore"))
+        except OSError:
+            target = None
+        entry = _entry_health("startup", target)
+        if entry:
+            entries.append(entry)
+    run_entry = _entry_health("run-key", run_key_target())
+    if run_entry:
+        entries.append(run_entry)
+    broken = [entry for entry in entries if not entry.target_exists]
+    if broken:
+        return StartupHealth(False, "启动项路径失效，目标文件不存在。", entries)
+    if entries or (include_schtasks and task_exists()):
+        return StartupHealth(True, "自启动已配置。", entries)
+    return StartupHealth(True, "未检测到当前用户启动项。", entries)
 
 
 def autostart_exists(include_schtasks: bool = False) -> bool:

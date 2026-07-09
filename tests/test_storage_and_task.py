@@ -18,6 +18,7 @@ from gdut_grade_monitor.task import (
     build_monitor_command,
     install_task_or_startup,
     _run_schtasks,
+    startup_health,
     startup_script_is_stale,
     startup_script_target,
     startup_script_exists,
@@ -161,6 +162,32 @@ class StorageAndTaskTests(unittest.TestCase):
             )
 
             self.assertTrue(startup_script_is_stale(startup))
+
+    def test_startup_health_detects_missing_startup_script_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            startup = Path(tmp) / "Startup"
+            startup.mkdir()
+            missing = Path(tmp) / "Deleted" / "GDUTGradeMonitor.exe"
+            (startup / "GDUT Grade Monitor.vbs").write_text(
+                f'Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run """{missing}"" --monitor", 0, False\n',
+                encoding="utf-8",
+            )
+
+            report = startup_health(startup_dir=startup, include_schtasks=False)
+
+            self.assertFalse(report.ok)
+            self.assertEqual(report.entries[0].mode, "startup")
+            self.assertFalse(report.entries[0].target_exists)
+            self.assertIn("不存在", report.message)
+
+    @patch("gdut_grade_monitor.task.run_key_target", return_value=Path("C:/Deleted/GDUTGradeMonitor.exe"))
+    @patch("gdut_grade_monitor.task.startup_script_exists", return_value=False)
+    def test_startup_health_detects_missing_run_key_target(self, startup_exists_mock, run_key_target_mock):
+        report = startup_health(include_schtasks=False)
+
+        self.assertFalse(report.ok)
+        self.assertEqual(report.entries[0].mode, "run-key")
+        self.assertFalse(report.entries[0].target_exists)
 
     def test_monitor_command_uses_frozen_exe_when_packaged(self):
         with patch("gdut_grade_monitor.task.is_frozen", return_value=True):
