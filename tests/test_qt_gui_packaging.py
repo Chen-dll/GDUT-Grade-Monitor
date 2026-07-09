@@ -255,6 +255,24 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("self.check_now(silent=True)", auto_check_block)
         self.assertIn("not config.get(\"student_id\")", auto_check_block)
 
+    def test_qt_keeps_checking_after_next_check_time_when_gui_stays_open(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        init_block = text.split("def __init__(self):", 1)[1].split("def _fit_to_current_screen", 1)[0]
+        scheduler_block = text.split("def _check_due_schedule", 1)[1].split("def maybe_run_startup_check", 1)[0]
+        check_now_block = text.split("def check_now", 1)[1].split("def _check_now_worker", 1)[0]
+        complete_block = text.split("def _scheduled_check_complete", 1)[1].split("def setup_login", 1)[0]
+
+        self.assertIn("self._schedule_timer = QTimer(self)", init_block)
+        self.assertIn("self._schedule_timer.timeout.connect(self._check_due_schedule)", init_block)
+        self.assertIn("self._schedule_timer.start(15_000)", init_block)
+        self.assertIn("next_check_at", scheduler_block)
+        self.assertIn("datetime.now() < datetime.fromisoformat(next_check_at)", scheduler_block)
+        self.assertIn("monitor_pause_remaining_seconds(config)", scheduler_block)
+        self.assertIn("self._signals", scheduler_block)
+        self.assertIn("self.check_now(silent=True, scheduled=True)", scheduler_block)
+        self.assertIn("self._scheduled_check_running", check_now_block)
+        self.assertIn("self._scheduled_check_running = False", complete_block)
+
     def test_qt_gui_mentions_repair_startup_wording(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
         install_block = text.split("def install_startup", 1)[1].split("def uninstall_startup", 1)[0]

@@ -16,7 +16,7 @@ class VersionAndAboutTests(unittest.TestCase):
         pyproject_version = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE).group(1)
 
         self.assertEqual(APP_VERSION, pyproject_version)
-        self.assertEqual(APP_VERSION, "0.3.4")
+        self.assertEqual(APP_VERSION, "0.3.5")
         self.assertIn(f'#define AppVersion "{APP_VERSION}"', installer)
         self.assertIn(f"version-{APP_VERSION}-blue", readme)
         self.assertIn(f"## {APP_VERSION} -", changelog)

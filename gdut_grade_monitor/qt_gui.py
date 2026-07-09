@@ -67,7 +67,7 @@ from .gui_model import help_sections, history_table_rows
 from .gui_model import onboarding_steps, recent_change_rows, semester_options
 from .gui_model import setup_guidance, status_center_rows, status_summary
 from .log_view import write_log_view_file
-from .monitor import GradeMonitor
+from .monitor import GradeMonitor, monitor_pause_remaining_seconds
 from .notification_channels import (
     NotificationSecretStore,
     build_notifier,
@@ -1276,6 +1276,7 @@ class GradeMonitorQtApp(QMainWindow):
         self._setup_progress_index = 0
         self._busy_progress: QProgressDialog | None = None
         self._force_quit = False
+        self._scheduled_check_running = False
         self.setWindowTitle(f"GDUT 成绩提醒 v{APP_VERSION}")
         self.setWindowIcon(QIcon(str(app_icon_path())))
         self.setMinimumSize(1060, 640)
@@ -1287,6 +1288,9 @@ class GradeMonitorQtApp(QMainWindow):
         QTimer.singleShot(350, self.maybe_show_first_run_wizard)
         QTimer.singleShot(700, self.maybe_show_update_success)
         QTimer.singleShot(1200, self.maybe_run_startup_check)
+        self._schedule_timer = QTimer(self)
+        self._schedule_timer.timeout.connect(self._check_due_schedule)
+        self._schedule_timer.start(15_000)
 
     def _fit_to_current_screen(self) -> None:
         screen = QApplication.primaryScreen()
@@ -2385,6 +2389,26 @@ class GradeMonitorQtApp(QMainWindow):
         self._close_setup_progress()
         QMessageBox.critical(self, "一键配置本机", message)
 
+    def _check_due_schedule(self) -> None:
+        config = load_config(self.paths)
+        if not config.get("student_id"):
+            return
+        if monitor_pause_remaining_seconds(config):
+            return
+        if self._scheduled_check_running or self._signals or self._setup_progress is not None or self._busy_progress is not None:
+            return
+
+        monitor = load_state(self.paths).get("monitor", {})
+        next_check_at = str(monitor.get("next_check_at") or "")
+        if next_check_at:
+            try:
+                if datetime.now() < datetime.fromisoformat(next_check_at):
+                    return
+            except ValueError:
+                pass
+
+        self.check_now(silent=True, scheduled=True)
+
     def maybe_run_startup_check(self) -> None:
         config = load_config(self.paths)
         if not config.get("student_id"):
@@ -2393,9 +2417,16 @@ class GradeMonitorQtApp(QMainWindow):
             return
         self.check_now(silent=True)
 
-    def check_now(self, silent: bool = False) -> None:
+    def check_now(self, silent: bool = False, scheduled: bool = False) -> None:
+        if scheduled:
+            if self._scheduled_check_running:
+                return
+            self._scheduled_check_running = True
+
         if silent:
-            self._run_background(self._check_now_worker, self._check_complete_silent, lambda _message: self.refresh_status())
+            success = self._scheduled_check_complete if scheduled else self._check_complete_silent
+            failure = self._scheduled_check_failed if scheduled else lambda _message: self.refresh_status()
+            self._run_background(self._check_now_worker, success, failure)
             return
         self._run_background_with_progress(
             "立即检查",
@@ -2424,6 +2455,14 @@ class GradeMonitorQtApp(QMainWindow):
         grades, _changes = payload
         self._fill_table(self.grades_table, grade_table_rows(grades))
         self.refresh_all()
+
+    def _scheduled_check_complete(self, payload: tuple[list[dict], list[dict]]) -> None:
+        self._scheduled_check_running = False
+        self._check_complete_silent(payload)
+
+    def _scheduled_check_failed(self, _message: str) -> None:
+        self._scheduled_check_running = False
+        self.refresh_status()
 
     def setup_login(self) -> None:
         dialog = FirstRunSetupDialog(self, self.interval.value())

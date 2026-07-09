@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5 - 2026-07-09
+
+### Fixed
+
+- Fixed the Qt desktop window only running the startup check once while the displayed next-check time expired without another check.
+- The GUI now has an internal due-time scheduler that checks every 15 seconds and triggers a silent read-only grade check when `next_check_at` is reached.
+- The scheduler skips unconfigured, paused, setup, progress-dialog, or already-running background work states to avoid duplicate school-system requests.
+
 ## 0.3.4 - 2026-07-09
 
 ### Added
