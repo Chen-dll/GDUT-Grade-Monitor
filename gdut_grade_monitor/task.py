@@ -62,8 +62,8 @@ def _decode_process_output(value: str | bytes | None) -> str:
     candidates = [
         locale.getpreferredencoding(False),
         sys.getfilesystemencoding(),
-        "mbcs",
         "gbk",
+        "mbcs",
         "utf-8",
     ]
     seen: set[str] = set()
