@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.2 - 2026-07-09
+
+### Added
+
+- Added a safe small-patch update flow for future packaged releases, including patch asset discovery, SHA256 verification, and an external helper that applies changed files after the app exits.
+- Added release helper scripts for building patch zip/json assets from two packaged app folders.
+- Added release checklist items for small-patch update validation.
+
+### Changed
+
+- Grade analytics now treats zero-score placeholder rows as not-yet-open or not-evaluated results and excludes them from counted credits, GPA, GPA distribution, and transcript average score.
+- Duplicate zero-score rows with a matching positive result are now shown as likely deferred-exam placeholders.
+- Update dialogs now explain when small patches are available and when a full installer or portable package is required.
+
+### Fixed
+
+- Patch update download and manifest failures now show user-friendly recovery guidance instead of raw technical exception names.
+- README version badge and release documentation now match the application version.
+
 ## 0.3.1 - 2026-07-09
 
 ### Added

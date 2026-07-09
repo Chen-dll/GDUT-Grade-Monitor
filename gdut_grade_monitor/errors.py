@@ -7,6 +7,7 @@ import requests
 from .auth import BrowserFillMismatchError, BrowserLaunchError, PlaywrightBrowserMissingError, SessionExpiredError
 from .client import GradeResponseError
 from .credentials import PasswordInputError
+from .patch_update import PatchDownloadError, PatchManifestError
 from .update_check import UpdateCheckError
 
 
@@ -48,4 +49,14 @@ def user_friendly_error_message(exc: Exception) -> str:
         return "成绩接口返回内容无法解析，可能需要重新登录。请在设置页重新登录后再检查。"
     if isinstance(exc, UpdateCheckError):
         return str(exc)
+    if isinstance(exc, PatchDownloadError):
+        return (
+            f"下载小补丁失败：{exc}\n\n"
+            "请检查网络后稍后重试；如果仍失败，可以打开 GitHub Release 下载完整安装包或便携包。"
+        )
+    if isinstance(exc, PatchManifestError):
+        return (
+            f"小补丁校验失败：{exc}\n\n"
+            "为避免安装损坏或来源不明的文件，已取消补丁更新。请打开下载页获取完整安装包或便携包。"
+        )
     return f"{type(exc).__name__}: {exc}"

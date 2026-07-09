@@ -2,7 +2,7 @@
 
 广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.3.2-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -114,6 +114,8 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 下载后如需校验文件完整性，可在 Release 中同时下载 `SHA256SUMS.txt`，用 PowerShell 的 `Get-FileHash` 对比安装包或便携包的 SHA256 值。
 
 如果只是小修复，Release 可能同时提供 `GDUTGradeMonitor-patch-v旧版本-to-v新版本.zip` 和同名 `.json` 补丁清单。已安装的打包版用户在“设置 -> 检查更新”里可以直接选择“安装小补丁”，程序会先校验补丁 SHA256，再短暂关闭、替换变化文件并重新启动。源码运行版不会自动应用补丁，需要拉取源码或下载完整包。
+
+注意：小补丁能力从 `0.3.2` 开始提供。已经安装 `0.3.0` 或 `0.3.1` 的用户，需要先下载完整安装包或便携包更新到 `0.3.2`；之后的版本才可以通过“安装小补丁”减少下载量。
 
 如果自启动安装时 Windows 拒绝创建计划任务，程序会自动改用当前用户启动项。
 
@@ -372,8 +374,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_patch.ps1 `
-  -OldVersion 0.3.1 `
-  -NewVersion 0.3.2 `
+  -OldVersion 0.3.2 `
+  -NewVersion 0.3.3 `
   -PreviousDist .\dist-prev\GDUTGradeMonitor `
   -CurrentDist .\dist\GDUTGradeMonitor
 ```

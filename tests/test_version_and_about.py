@@ -10,12 +10,16 @@ class VersionAndAboutTests(unittest.TestCase):
     def test_single_version_matches_pyproject_and_installer(self):
         pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
         installer = Path("packaging/installer/GDUTGradeMonitor.iss").read_text(encoding="utf-8")
+        readme = Path("README.md").read_text(encoding="utf-8")
+        changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
         pyproject_version = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE).group(1)
 
         self.assertEqual(APP_VERSION, pyproject_version)
-        self.assertEqual(APP_VERSION, "0.3.1")
+        self.assertEqual(APP_VERSION, "0.3.2")
         self.assertIn(f'#define AppVersion "{APP_VERSION}"', installer)
+        self.assertIn(f"version-{APP_VERSION}-blue", readme)
+        self.assertIn(f"## {APP_VERSION} -", changelog)
 
     def test_about_text_includes_author_version_and_readonly_boundary(self):
         text = about_text()

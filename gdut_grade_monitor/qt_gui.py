@@ -2434,7 +2434,8 @@ class GradeMonitorQtApp(QMainWindow):
             if release.patch_update and can_apply_patch():
                 box.setInformativeText(
                     f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n"
-                    "此版本提供小补丁，可只下载变化文件并自动应用。更新前会校验 SHA256，应用时会短暂关闭并重启程序。"
+                    "此版本提供小补丁，可只下载变化文件并自动应用。更新前会校验 SHA256，应用时会短暂关闭并重启程序。\n\n"
+                    "小补丁能力从 v0.3.2 开始提供；更早版本需要先下载完整安装包或便携包。"
                 )
                 patch_button = box.addButton("安装小补丁", QMessageBox.AcceptRole)
                 open_button = box.addButton("打开下载页", QMessageBox.ActionRole)
@@ -2448,7 +2449,7 @@ class GradeMonitorQtApp(QMainWindow):
             if release.patch_update and not can_apply_patch():
                 box.setInformativeText(
                     f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n"
-                    "此版本提供小补丁，但当前不是打包安装版运行，无法自动应用。是否打开下载页面？"
+                    "此版本提供小补丁，但当前不是打包安装版运行，无法自动应用。请打开下载页面获取完整安装包或便携包。"
                 )
             else:
                 box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n是否打开下载页面？")

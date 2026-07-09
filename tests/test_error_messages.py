@@ -6,6 +6,7 @@ import requests
 from gdut_grade_monitor.auth import BrowserFillMismatchError, BrowserLaunchError, PlaywrightBrowserMissingError, SessionExpiredError
 from gdut_grade_monitor.client import GradeResponseError
 from gdut_grade_monitor.errors import user_friendly_error_message
+from gdut_grade_monitor.patch_update import PatchDownloadError, PatchManifestError
 
 
 class FakeResponse:
@@ -54,6 +55,16 @@ class FriendlyErrorMessageTests(unittest.TestCase):
 
         self.assertIn("网络超时", timeout_message)
         self.assertIn("重新登录", json_message)
+
+    def test_maps_patch_update_errors_to_safe_recovery(self):
+        manifest_message = user_friendly_error_message(PatchManifestError("hash mismatch"))
+        download_message = user_friendly_error_message(PatchDownloadError("network down"))
+
+        self.assertIn("小补丁", manifest_message)
+        self.assertIn("完整安装包", manifest_message)
+        self.assertNotIn("Traceback", manifest_message)
+        self.assertIn("下载小补丁失败", download_message)
+        self.assertIn("稍后重试", download_message)
 
 
 if __name__ == "__main__":
