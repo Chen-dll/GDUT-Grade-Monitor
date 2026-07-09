@@ -16,7 +16,7 @@ from .doctor import overall_ok, run_checks
 from .gui_model import about_text, doctor_table_rows, grade_table_rows, history_table_rows, next_check_summary, setup_guidance
 from .gui_model import status_summary
 from .monitor import GradeMonitor
-from .notify import WindowsNotifier
+from .notification_channels import build_notifier
 from .setup_flow import FirstRunSetupResult, run_first_run_setup
 from .storage import AppPaths, load_config, load_state, set_poll_interval
 from .task import autostart_exists, install_task_or_startup, uninstall_task_and_startup
@@ -331,7 +331,7 @@ class GradeMonitorApp:
         password = CredentialStore().get_password(student_id) if student_id else None
         session = AuthManager(self.paths).get_session(auto_login=True, student_id=student_id, password=password)
         fetcher = GradeApiClient(session)
-        monitor = GradeMonitor(self.paths, fetcher=fetcher, notifier=WindowsNotifier())
+        monitor = GradeMonitor(self.paths, fetcher=fetcher, notifier=build_notifier(self.paths))
         changes = monitor.run_once()
         grades = fetcher.fetch_grades()
         self.root.after(0, lambda: self._check_complete(grades, changes))

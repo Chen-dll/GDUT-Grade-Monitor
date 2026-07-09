@@ -255,21 +255,50 @@ def _looks_elective(grade: dict) -> bool:
     return any("选修" in str(value) for value in values)
 
 
-def history_table_rows(state: dict) -> list[tuple[str, str, str, str, str]]:
+def history_table_rows(state: dict, include_delivery: bool = False) -> list[tuple]:
     labels = {"new": "新成绩", "changed": "成绩变化"}
     rows = []
     for item in state.get("history", []):
         at = str(item.get("at", "")).replace("T", " ")
-        rows.append(
-            (
-                at,
-                labels.get(item.get("kind", ""), str(item.get("kind", ""))),
-                str(item.get("semester", "")),
-                str(item.get("course_name", "")),
-                str(item.get("score", "")),
-            )
+        base = (
+            at,
+            labels.get(item.get("kind", ""), str(item.get("kind", ""))),
+            str(item.get("semester", "")),
+            str(item.get("course_name", "")),
+            str(item.get("score", "")),
         )
+        if include_delivery:
+            channels, results = _delivery_summary(item.get("delivery", []))
+            rows.append((*base, channels, results))
+        else:
+            rows.append(base)
     return rows
+
+
+def _delivery_summary(delivery: object) -> tuple[str, str]:
+    if not isinstance(delivery, list) or not delivery:
+        return ("未记录", "旧记录")
+    channels = []
+    ok_count = 0
+    fail_count = 0
+    for item in delivery:
+        if not isinstance(item, dict):
+            continue
+        channels.append(str(item.get("label") or item.get("channel_id") or "未知渠道"))
+        if item.get("ok"):
+            ok_count += 1
+        else:
+            fail_count += 1
+    if not channels:
+        return ("未记录", "旧记录")
+    if fail_count:
+        result = f"{ok_count} 成功 / {fail_count} 失败"
+    else:
+        result = f"{ok_count} 成功"
+    return (
+        "、".join(channels),
+        result,
+    )
 
 
 def setup_guidance(startup_installed: bool, config: dict, state: dict, required_checks_ok: bool) -> dict[str, str]:
@@ -403,8 +432,18 @@ def help_sections() -> list[dict[str, object]]:
             "items": [
                 "发现新课程成绩，或同一课程成绩值发生变化时，才会弹 Windows 通知。",
                 "重复检查到相同成绩不会重复提醒。",
-                "提醒历史只记录提醒摘要，不保存密码、Cookie 或完整个人信息。",
+                "提醒历史会记录提醒摘要和各通知渠道发送结果，不保存密码、Cookie 或通知密钥。",
                 "立即检查适合调试；后台提醒依赖设置页里的自启动状态。",
+            ],
+        },
+        {
+            "title": "多设备通知",
+            "body": "电脑仍然负责只读查询成绩，手机、微信和邮箱只接收通知事件。",
+            "items": [
+                "设置页可以开启 PushPlus、Server酱、ntfy 或邮件 SMTP。",
+                "每个通道可选择隐私模式、摘要模式或详细模式。",
+                "远程通道默认隐私模式，只提示有新成绩或成绩变化。",
+                "第三方通知服务会接收你选择发送的通知内容，开启详细模式前请确认风险。",
             ],
         },
         {
@@ -412,6 +451,7 @@ def help_sections() -> list[dict[str, object]]:
             "body": "所有敏感数据都留在本机，且尽量放在系统提供的位置。",
             "items": [
                 "密码保存在 Windows 凭据管理器，不写入配置文件、日志或诊断包。",
+                "通知 token、SendKey 和邮箱授权码同样保存在 Windows 凭据管理器。",
                 "Cookie、配置、成绩快照和日志保存在用户目录 ~/.gdut-grade-monitor。",
                 "导出诊断包会隐藏敏感信息，方便排查环境问题。",
                 "本工具严格只读，不实现评价、修改密码、保存、删除、更新等操作。",
@@ -442,9 +482,20 @@ def help_sections() -> list[dict[str, object]]:
             "body": "卸载程序和本地数据是两件事，可以按需要分别处理。",
             "items": [
                 "不想后台运行时，在设置页取消自启动。",
+                "设置页的卸载辅助可以检测并清理便携版目录被直接删除后留下的启动项。",
                 "卸载安装版程序只会移除程序文件，不会主动删除你的本地成绩快照。",
                 "本地数据目录在 ~/.gdut-grade-monitor，可以从总览页打开数据目录后手动清理。",
                 "如需删除保存的密码，请在 Windows 凭据管理器中删除对应凭据。",
+            ],
+        },
+        {
+            "title": "配置迁移与恢复默认",
+            "body": "设置页可以迁移非敏感偏好，也可以把设置恢复到推荐状态。",
+            "items": [
+                "导出设置只包含查询频率、日志级别和通知渠道开关等非敏感配置。",
+                "导出文件不会包含学号、密码、Cookie、成绩快照、通知 token、SendKey 或邮箱授权码。",
+                "导入设置不会覆盖本机已保存账号；通知密钥仍需在多设备通知页重新保存。",
+                "恢复默认会重置查询频率、暂停状态和通知开关，但保留账号与本地成绩快照。",
             ],
         },
     ]
@@ -474,6 +525,8 @@ def _doctor_action(result: CheckResult) -> str:
         return "点击一键配置本机，保存账号并建立基线。"
     if "autostart" in name:
         return "点击安装自启动，开启登录后后台提醒。"
+    if "startup residue" in name:
+        return "打开设置页的卸载辅助，点击一键清理残留。"
     if "data directory" in name:
         return "检查用户目录权限，确保本工具可以写入 .gdut-grade-monitor。"
     if "python" in name:

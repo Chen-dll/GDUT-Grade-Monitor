@@ -2,7 +2,7 @@
 
 广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
 
-![Version](https://img.shields.io/badge/version-0.2.8-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -18,12 +18,26 @@
 
 Windows 可能提示“未知发布者”，这是因为当前版本还没有代码签名证书。确认来源是本仓库 Release 后再运行。
 
+## 3 分钟快速使用
+
+1. 下载 `GDUTGradeMonitor-Setup.exe`，按安装向导完成安装并启动程序。
+2. 第一次打开后点击“一键配置本机”，填写学号、密码和检查频率。
+3. 如果弹出统一认证浏览器页面，按学校页面完成验证码或二次验证。
+4. 回到主界面看到“现在已经可以后台提醒了”或“后台提醒已准备好”即可。
+
+默认每 30 分钟检查一次。第一次只建立本地基线，不会提醒；之后发现新成绩或成绩变化才会通知。
+
+密码和通知密钥不会上传，也不会写入配置文件；它们只保存到 Windows 凭据管理器。Cookie、成绩快照和日志保存在本机用户目录。
+
 ## 功能
 
 - 只读查询课程成绩，不调用评价、修改、保存、删除类接口。
 - 首次登录后保存 Cookie；密码保存到 Windows Credential Manager，不写入配置文件。
 - 每 30 分钟默认检查一次，可自定义 1 到 1440 分钟。
 - Windows 通知提醒、提醒历史、成绩表格 GUI。
+- 可选多设备通知：支持 PushPlus、Server酱、ntfy 和邮件 SMTP。
+- 多设备通知支持隐私模式、摘要模式、详细模式；远程通道默认隐私模式。
+- 提醒历史会显示每次成绩变化的通知渠道和发送结果，方便排查某个手机/邮箱渠道是否失败。
 - 支持 Windows 登录后自动后台运行；没有任务计划权限时自动使用用户启动项。
 - 提供 `doctor` 环境检查，方便在别人的电脑上排查安装问题。
 - 新电脑第一次打开会自动显示“新手向导”，按步骤介绍隐私、只读边界、页面功能和一键配置。
@@ -34,8 +48,32 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 - 可打开学校网上办事大厅官方成绩单入口，由用户手动查看或下载官方成绩单；工具不会自动提交申请。
 - 登录时会尽量勾选统一认证的“7天/保持登录/免登录”，官方成绩单入口也会优先复用本工具登录时的浏览器登录资料。
 - GUI 提供“检查更新”，可打开 GitHub 最新 Release 下载页。
+- GUI 支持导出/导入非敏感设置，换电脑时可迁移查询频率和通知渠道开关；不会导出学号、密码、Cookie 或通知密钥。
+- GUI 支持恢复推荐默认设置，会保留已保存账号和本地成绩快照。
+- 环境检查会提示便携版残留启动项；设置页提供“卸载辅助”，也可单独运行 `GDUTGradeMonitor-Cleanup.cmd` 清理遗留启动项。
 - 提供“关于”和“导出诊断包”，方便反馈问题；诊断包会隐藏学号、密码、Cookie 和完整成绩明细。
 - 0.2.0 起默认使用 PySide6/Qt 现代桌面界面，保留旧 Tkinter 界面作为备用入口。
+
+## 多设备通知
+
+0.3.0 起可以在 GUI 的“设置 -> 多设备通知”里开启手机或邮箱提醒。电脑仍然是唯一登录教务系统并只读查询成绩的设备，手机、微信和邮箱只接收通知事件。
+
+首批支持：
+
+- `PushPlus`：微信类通知，填写 PushPlus token。
+- `Server酱`：微信类通知，填写 SendKey。
+- `ntfy`：支持手机 App 或网页订阅 topic；公共 topic 不建议发送详细成绩。
+- `邮件 SMTP`：填写 SMTP 服务器、账号、收件人和授权码。
+
+每个通道都可以单独选择通知内容：
+
+- `隐私模式`：只提示有新成绩或成绩变化，不显示课程名和分数。
+- `摘要模式`：显示学期和课程名，不显示分数。
+- `详细模式`：显示学期、课程名和成绩。
+
+远程通道会经过对应第三方服务。为了避免锁屏通知或第三方服务暴露成绩，远程通道默认使用隐私模式；如果你手动改为详细模式，请确认自己接受这个风险。通知 token、SendKey 和邮箱授权码只保存到 Windows Credential Manager，不写入 `config.json`。
+
+发送测试通知和真实成绩提醒都会在本机提醒历史里记录每个渠道的成功/失败摘要。失败原因只保存可读提示，不保存 token、SendKey 或邮箱授权码。
 
 ## 环境要求
 
@@ -50,6 +88,7 @@ Windows 可能提示“未知发布者”，这是因为当前版本还没有代
 
 - 安装版：`GDUTGradeMonitor-Setup.exe`，推荐普通用户下载。
 - 便携版：`GDUTGradeMonitor-portable.zip`，适合临时测试或不想安装时解压运行。
+- 残留清理工具：`GDUTGradeMonitor-Cleanup.cmd` / `GDUTGradeMonitor-Cleanup.ps1`，适合已经手动删除便携版目录、但启动项还残留的情况。
 
 如果使用安装版，普通用户只需要：
 
@@ -161,6 +200,8 @@ python -m gdut_grade_monitor legacy-gui
 - 登录/初始化
 - 安装/取消自启动
 - 修改查询频率
+- 导出/导入非敏感设置
+- 恢复推荐默认设置
 - 查看提醒历史
 - 环境检查
 - 导出诊断包
@@ -170,7 +211,7 @@ python -m gdut_grade_monitor legacy-gui
 
 ## 隐私说明
 
-隐私和本地数据保存位置见 [PRIVACY.md](PRIVACY.md)。简要来说：密码只保存到 Windows 凭据管理器，Cookie、配置、成绩快照和日志保存在 `%USERPROFILE%\.gdut-grade-monitor`；本工具不会上传这些数据。
+隐私和本地数据保存位置见 [PRIVACY.md](PRIVACY.md)。简要来说：密码和通知密钥只保存到 Windows 凭据管理器，Cookie、配置、成绩快照和日志保存在 `%USERPROFILE%\.gdut-grade-monitor`；默认不会上传这些数据。若主动开启多设备通知，程序会按你选择的隐私级别把通知内容发送到对应第三方服务。
 
 ## 配置参数
 
@@ -184,6 +225,24 @@ python -m gdut_grade_monitor config show
 
 ```powershell
 python -m gdut_grade_monitor config interval 10
+```
+
+导出非敏感设置：
+
+```powershell
+python -m gdut_grade_monitor config export --output gdut-grade-settings.json
+```
+
+导入非敏感设置：
+
+```powershell
+python -m gdut_grade_monitor config import --input gdut-grade-settings.json
+```
+
+恢复推荐默认设置：
+
+```powershell
+python -m gdut_grade_monitor config reset
 ```
 
 配置文件位置：
@@ -238,6 +297,7 @@ python -m gdut_grade_monitor monitor
 python -m gdut_grade_monitor gui
 python -m gdut_grade_monitor config show
 python -m gdut_grade_monitor config interval 30
+python -m gdut_grade_monitor cleanup
 python -m gdut_grade_monitor task install
 python -m gdut_grade_monitor task status
 python -m gdut_grade_monitor task uninstall
@@ -265,7 +325,19 @@ python -m gdut_grade_monitor task uninstall
 python -m pip uninstall gdut-grade-monitor
 ```
 
-如需删除本地状态文件，可手动删除：
+安装版卸载时会询问是否同时删除本地配置、Cookie、成绩快照和日志。选择保留数据后，之后重装可以继续使用原来的本地状态。
+
+如果使用便携版时直接删除了解压目录，可能会留下 Windows 启动项。此时可单独下载或运行 Release 里的：
+
+```text
+GDUTGradeMonitor-Cleanup.cmd
+```
+
+它会删除本工具创建的启动文件和计划任务，并询问是否同时删除本地配置、Cookie、成绩快照和日志。它不会删除 Windows 凭据管理器中的密码和通知密钥。
+
+如果程序还能打开，也可以进入“设置 -> 卸载辅助”，点击“一键清理残留”。环境检查页会在发现启动项指向已删除程序时给出提示。
+
+如需手动删除本地状态文件，可删除：
 
 ```text
 %USERPROFILE%\.gdut-grade-monitor
@@ -279,6 +351,7 @@ python -m pip uninstall gdut-grade-monitor
 python -m unittest discover -s tests -v
 python -m compileall gdut_grade_monitor tests
 python -m gdut_grade_monitor doctor
+powershell -ExecutionPolicy Bypass -File .\scripts\test_portable_release.ps1 -SkipLaunch
 ```
 
 构建 Windows GUI 应用目录和便携 zip：

@@ -17,6 +17,9 @@ from gdut_grade_monitor.task import (
     build_startup_script,
     build_monitor_command,
     install_task_or_startup,
+    _run_schtasks,
+    startup_script_is_stale,
+    startup_script_target,
     startup_script_exists,
     uninstall_task_and_startup,
 )
@@ -35,12 +38,35 @@ class StorageAndTaskTests(unittest.TestCase):
             self.assertNotIn("password", saved)
             self.assertNotIn("secret", paths.config_file.read_text(encoding="utf-8"))
 
+    def test_config_recursively_removes_notification_secrets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+
+            save_config(
+                paths,
+                {
+                    "notifications": {
+                        "pushplus": {"enabled": True, "token": "push-token"},
+                        "smtp": {"password": "smtp-pass", "nested": [{"secret": "hidden"}]},
+                    }
+                },
+            )
+
+            saved_text = paths.config_file.read_text(encoding="utf-8")
+            saved = json.loads(saved_text)
+            self.assertNotIn("token", saved["notifications"]["pushplus"])
+            self.assertNotIn("password", saved["notifications"]["smtp"])
+            self.assertNotIn("secret", saved_text)
+            self.assertNotIn("push-token", saved_text)
+            self.assertNotIn("smtp-pass", saved_text)
+
     def test_default_config_uses_thirty_minutes(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = load_config(AppPaths(Path(tmp)))
 
             self.assertEqual(config["poll_interval_minutes"], 30)
             self.assertFalse(config["first_run_wizard_seen"])
+            self.assertIn("notifications", config)
 
     @patch("gdut_grade_monitor.credentials.keyring")
     def test_credentials_use_keyring_service_without_returning_password_to_config(self, keyring_mock):
@@ -97,12 +123,44 @@ class StorageAndTaskTests(unittest.TestCase):
         self.assertTrue(run_mock.call_args.kwargs.get("capture_output"))
         self.assertIn("timeout", run_mock.call_args.kwargs)
 
+    @patch("gdut_grade_monitor.task.subprocess.run")
+    def test_schtasks_output_decodes_chinese_system_bytes_without_crashing(self, run_mock):
+        run_mock.return_value = Mock(returncode=1, stdout="错误: 拒绝访问".encode("gbk"), stderr=b"")
+
+        result = _run_schtasks(["/Create"])
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIsInstance(result.stdout, str)
+        self.assertIn("拒绝访问", result.stdout)
+        self.assertNotIn("text", run_mock.call_args.kwargs)
+
     def test_startup_script_runs_pythonw_monitor_hidden(self):
         script = build_startup_script("F:/Program Files/Python314/pythonw.exe")
 
         self.assertIn('CreateObject("WScript.Shell")', script)
         self.assertIn('""F:/Program Files/Python314/pythonw.exe"" -m gdut_grade_monitor monitor', script)
         self.assertIn(", 0, False", script)
+
+    def test_startup_script_target_extracts_packaged_exe_path(self):
+        script = 'Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run """F:/Apps/GDUTGradeMonitor/GDUTGradeMonitor.exe"" --monitor", 0, False\n'
+
+        self.assertEqual(
+            startup_script_target(script),
+            Path("F:/Apps/GDUTGradeMonitor/GDUTGradeMonitor.exe"),
+        )
+
+    def test_startup_script_is_stale_when_target_exe_was_deleted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            startup = Path(tmp) / "Startup"
+            startup.mkdir()
+            missing = Path(tmp) / "Deleted" / "GDUTGradeMonitor.exe"
+            script = startup / "GDUT Grade Monitor.vbs"
+            script.write_text(
+                f'Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run """{missing}"" --monitor", 0, False\n',
+                encoding="utf-8",
+            )
+
+            self.assertTrue(startup_script_is_stale(startup))
 
     def test_monitor_command_uses_frozen_exe_when_packaged(self):
         with patch("gdut_grade_monitor.task.is_frozen", return_value=True):
@@ -121,6 +179,21 @@ class StorageAndTaskTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "GDUT Grade Monitor.vbs").exists())
             self.assertTrue(startup_script_exists(Path(tmp)))
 
+    @patch("gdut_grade_monitor.task.install_run_key")
+    @patch("gdut_grade_monitor.task.install_startup_script")
+    @patch("gdut_grade_monitor.task.subprocess.run")
+    def test_install_falls_back_to_run_key_when_startup_directory_is_not_writable(
+        self, run_mock, install_startup_mock, install_run_key_mock
+    ):
+        run_mock.return_value = Mock(returncode=1, stdout="错误: 拒绝访问".encode("gbk"), stderr=b"")
+        install_startup_mock.side_effect = PermissionError("Access to startup denied")
+        install_run_key_mock.return_value = Mock(mode="run-key", returncode=0, stdout="", stderr="")
+
+        result = install_task_or_startup(pythonw="C:/Python/pythonw.exe")
+
+        self.assertEqual(result.mode, "run-key")
+        install_run_key_mock.assert_called_once_with(pythonw="C:/Python/pythonw.exe")
+
     @patch("gdut_grade_monitor.task.subprocess.run")
     def test_prefer_startup_script_avoids_schtasks(self, run_mock):
         with tempfile.TemporaryDirectory() as tmp:
@@ -134,9 +207,14 @@ class StorageAndTaskTests(unittest.TestCase):
             self.assertTrue(startup_script_exists(Path(tmp)))
             run_mock.assert_not_called()
 
+    @patch("gdut_grade_monitor.task.uninstall_run_key")
+    @patch("gdut_grade_monitor.task.run_key_exists", return_value=False)
     @patch("gdut_grade_monitor.task.subprocess.run")
-    def test_uninstall_removes_startup_script_even_when_schtasks_delete_fails(self, run_mock):
+    def test_uninstall_removes_startup_script_even_when_schtasks_delete_fails(
+        self, run_mock, run_key_exists_mock, uninstall_run_key_mock
+    ):
         run_mock.return_value = Mock(returncode=1, stdout="", stderr="ERROR: The system cannot find the file specified.")
+        uninstall_run_key_mock.return_value = Mock(returncode=0)
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "GDUT Grade Monitor.vbs"
             script.write_text("x", encoding="utf-8")
@@ -146,8 +224,13 @@ class StorageAndTaskTests(unittest.TestCase):
             self.assertEqual(result.mode, "startup")
             self.assertFalse(script.exists())
 
+    @patch("gdut_grade_monitor.task.uninstall_run_key")
+    @patch("gdut_grade_monitor.task.run_key_exists", return_value=False)
     @patch("gdut_grade_monitor.task.subprocess.run")
-    def test_skip_schtasks_uninstall_removes_startup_without_querying_task_scheduler(self, run_mock):
+    def test_skip_schtasks_uninstall_removes_startup_without_querying_task_scheduler(
+        self, run_mock, run_key_exists_mock, uninstall_run_key_mock
+    ):
+        uninstall_run_key_mock.return_value = Mock(returncode=0)
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "GDUT Grade Monitor.vbs"
             script.write_text("x", encoding="utf-8")
@@ -160,7 +243,8 @@ class StorageAndTaskTests(unittest.TestCase):
             run_mock.assert_not_called()
 
     @patch("gdut_grade_monitor.task.subprocess.run")
-    def test_safe_autostart_check_does_not_query_schtasks_by_default(self, run_mock):
+    @patch("gdut_grade_monitor.task.run_key_exists", return_value=False)
+    def test_safe_autostart_check_does_not_query_schtasks_by_default(self, run_key_exists_mock, run_mock):
         run_mock.return_value = Mock(returncode=0)
 
         with patch("gdut_grade_monitor.task.startup_script_exists", return_value=False):

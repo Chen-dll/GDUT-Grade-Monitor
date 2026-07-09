@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
+import locale
 from dataclasses import dataclass
 from pathlib import Path
 
 from .constants import TASK_NAME
 
 STARTUP_SCRIPT_NAME = f"{TASK_NAME}.vbs"
+RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_VALUE_NAME = TASK_NAME
 
 
 @dataclass(frozen=True)
@@ -33,16 +37,50 @@ def _hidden_subprocess_kwargs() -> dict:
 def _run_schtasks(args: list[str]) -> subprocess.CompletedProcess:
     command = ["schtasks", *args]
     try:
-        return subprocess.run(
+        result = subprocess.run(
             command,
             check=False,
             capture_output=True,
-            text=True,
             timeout=15,
             **_hidden_subprocess_kwargs(),
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+        return subprocess.CompletedProcess(
+            result.args,
+            result.returncode,
+            _decode_process_output(result.stdout),
+            _decode_process_output(result.stderr),
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError) as exc:
         return subprocess.CompletedProcess(command, 1, "", f"{type(exc).__name__}: {exc}")
+
+
+def _decode_process_output(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    candidates = [
+        locale.getpreferredencoding(False),
+        sys.getfilesystemencoding(),
+        "mbcs",
+        "gbk",
+        "utf-8",
+    ]
+    seen: set[str] = set()
+    for encoding in candidates:
+        if not encoding or encoding.lower() in seen:
+            continue
+        seen.add(encoding.lower())
+        try:
+            return value.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return value.decode(locale.getpreferredencoding(False) or "utf-8", errors="replace")
+
+
+def _is_access_denied(result: subprocess.CompletedProcess) -> bool:
+    text = f"{result.stderr or ''}\n{result.stdout or ''}"
+    return "Access is denied" in text or "拒绝访问" in text
 
 
 def find_pythonw() -> str:
@@ -111,6 +149,52 @@ def build_startup_script(pythonw: str | None = None) -> str:
     )
 
 
+def install_run_key(pythonw: str | None = None) -> TaskInstallResult:
+    if not sys.platform.startswith("win"):
+        return TaskInstallResult(mode="failed", returncode=1, stderr="Run key startup is only available on Windows.")
+    try:
+        import winreg
+
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, RUN_VALUE_NAME, 0, winreg.REG_SZ, build_monitor_command(pythonw))
+        return TaskInstallResult(mode="run-key", returncode=0)
+    except OSError as exc:
+        return TaskInstallResult(mode="failed", returncode=1, stderr=f"{type(exc).__name__}: {exc}")
+
+
+def uninstall_run_key() -> TaskInstallResult:
+    if not sys.platform.startswith("win"):
+        return TaskInstallResult(mode="run-key", returncode=0)
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE) as key:
+            try:
+                winreg.DeleteValue(key, RUN_VALUE_NAME)
+            except FileNotFoundError:
+                pass
+        return TaskInstallResult(mode="run-key", returncode=0)
+    except FileNotFoundError:
+        return TaskInstallResult(mode="run-key", returncode=0)
+    except OSError as exc:
+        return TaskInstallResult(mode="failed", returncode=1, stderr=f"{type(exc).__name__}: {exc}")
+
+
+def run_key_exists() -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_READ) as key:
+            winreg.QueryValueEx(key, RUN_VALUE_NAME)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
 def install_startup_script(startup_dir: Path | None = None, pythonw: str | None = None) -> TaskInstallResult:
     directory = startup_dir or globals()["startup_dir"]()
     directory.mkdir(parents=True, exist_ok=True)
@@ -122,8 +206,38 @@ def startup_script_exists(directory: Path | None = None) -> bool:
     return startup_script_path(directory).exists()
 
 
+def startup_script_target(script_text: str) -> Path | None:
+    match = re.search(r'WshShell\.Run\s+"((?:[^"]|"")*)"', script_text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    command = match.group(1).replace('""', '"').strip()
+    if not command:
+        return None
+    if command.startswith('"'):
+        end = command.find('"', 1)
+        if end <= 1:
+            return None
+        executable = command[1:end]
+    else:
+        executable = command.split(maxsplit=1)[0]
+    if not executable.lower().endswith(".exe"):
+        return None
+    return Path(executable)
+
+
+def startup_script_is_stale(directory: Path | None = None) -> bool:
+    script = startup_script_path(directory)
+    try:
+        if not script.exists():
+            return False
+        target = startup_script_target(script.read_text(encoding="utf-8", errors="ignore"))
+    except OSError:
+        return False
+    return target is not None and not target.exists()
+
+
 def autostart_exists(include_schtasks: bool = False) -> bool:
-    if startup_script_exists():
+    if startup_script_exists() or run_key_exists():
         return True
     return task_exists() if include_schtasks else False
 
@@ -139,8 +253,11 @@ def install_task_or_startup(
     result = _run_schtasks(build_install_command(task_name=task_name, pythonw=pythonw)[1:])
     if result.returncode == 0:
         return TaskInstallResult(mode="schtasks", returncode=0, stdout=result.stdout, stderr=result.stderr)
-    if "Access is denied" in (result.stderr or "") or "拒绝访问" in (result.stderr or ""):
-        return install_startup_script(startup_dir=startup_dir, pythonw=pythonw)
+    if _is_access_denied(result):
+        try:
+            return install_startup_script(startup_dir=startup_dir, pythonw=pythonw)
+        except OSError:
+            return install_run_key(pythonw=pythonw)
     return TaskInstallResult(mode="failed", returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
@@ -154,11 +271,13 @@ def uninstall_task_and_startup(
     if script.exists():
         script.unlink()
         removed_startup = True
+    had_run_key = run_key_exists()
+    run_key_result = uninstall_run_key()
     if skip_schtasks:
         return TaskInstallResult(mode="startup", returncode=0)
     result = uninstall_task(task_name)
     if result.returncode == 0:
         return TaskInstallResult(mode="schtasks", returncode=0, stdout=result.stdout, stderr=result.stderr)
-    if removed_startup:
+    if removed_startup or (had_run_key and run_key_result.returncode == 0):
         return TaskInstallResult(mode="startup", returncode=0, stdout=result.stdout, stderr=result.stderr)
     return TaskInstallResult(mode="failed", returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)

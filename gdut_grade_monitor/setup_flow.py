@@ -7,7 +7,7 @@ from .auth import AuthManager
 from .client import GradeApiClient
 from .credentials import CredentialStore
 from .monitor import GradeFetcher, GradeMonitor, Notifier
-from .notify import WindowsNotifier
+from .notification_channels import build_notifier
 from .storage import AppPaths, load_config, load_state, save_config, set_poll_interval
 from .task import TaskInstallResult, install_task_or_startup
 
@@ -46,7 +46,7 @@ def run_first_run_setup(
     credential_store = credential_store or CredentialStore()
     auth_manager = auth_manager or AuthManager(paths)
     fetcher_factory = fetcher_factory or (lambda session: GradeApiClient(session))
-    notifier = notifier or WindowsNotifier()
+    notifier = notifier or build_notifier(paths)
     startup_installer = startup_installer or (lambda: install_task_or_startup(prefer_startup=True))
 
     credential_store.set_credentials(student_id, password)

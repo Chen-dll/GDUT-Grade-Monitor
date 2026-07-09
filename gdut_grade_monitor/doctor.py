@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .auth import find_system_browser
 from .storage import AppPaths, load_config
-from .task import autostart_exists
+from .task import autostart_exists, startup_script_is_stale
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ def run_checks(paths: AppPaths | None = None) -> list[CheckResult]:
         _check_data_dir(paths),
         _check_config(paths),
         _check_autostart(),
+        _check_startup_residue(),
     ]
     return results
 
@@ -104,3 +105,14 @@ def _check_config(paths: AppPaths) -> CheckResult:
 def _check_autostart() -> CheckResult:
     installed = autostart_exists()
     return CheckResult("Autostart", installed, "installed" if installed else "not installed", required=False)
+
+
+def _check_startup_residue() -> CheckResult:
+    if startup_script_is_stale():
+        return CheckResult(
+            "Startup residue",
+            False,
+            "检测到残留启动项；请在设置页点击清理残留，或运行 GDUTGradeMonitor-Cleanup.cmd。",
+            required=False,
+        )
+    return CheckResult("Startup residue", True, "not detected", required=False)

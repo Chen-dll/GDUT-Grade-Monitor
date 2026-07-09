@@ -57,6 +57,7 @@ from .auth import AuthManager, BrowserFillMismatchError, PlaywrightBrowserMissin
 from .client import GradeApiClient, GradeResponseError
 from .constants import APP_AUTHOR, APP_VERSION
 from .credentials import CredentialStore, PasswordInputError
+from .cleanup import cleanup_residue, cleanup_summary
 from .diagnostics import create_diagnostics_zip
 from .doctor import overall_ok, run_checks
 from .errors import user_friendly_error_message
@@ -65,11 +66,19 @@ from .gui_model import help_sections, history_table_rows
 from .gui_model import onboarding_steps, recent_change_rows, semester_options
 from .gui_model import setup_guidance, status_center_rows, status_summary
 from .monitor import GradeMonitor
-from .notify import WindowsNotifier
+from .notification_channels import (
+    NotificationSecretStore,
+    build_notifier,
+    notification_config,
+    notification_error_message,
+    notification_setup_checks,
+)
+from .notify import NOTIFICATION_PRIVACY_DETAILED, NOTIFICATION_PRIVACY_PRIVATE, NOTIFICATION_PRIVACY_SUMMARY
 from .official_transcript import OFFICIAL_TRANSCRIPT_PORTAL_URL, official_transcript_guidance
 from .setup_flow import FirstRunSetupResult, run_first_run_setup
-from .storage import AppPaths, load_config, load_state, save_config, set_poll_interval
-from .task import autostart_exists, install_task_or_startup, uninstall_task_and_startup
+from .settings_backup import export_settings, import_settings
+from .storage import AppPaths, load_config, load_state, reset_config, save_config, set_poll_interval
+from .task import autostart_exists, install_task_or_startup, startup_script_is_stale, uninstall_task_and_startup
 from .transcript import TRANSCRIPT_NOTICE, build_transcript_html, write_transcript_html
 from .update_check import GitHubRelease, check_latest_release
 
@@ -310,6 +319,624 @@ class TranscriptExportDialog(QDialog):
 
     def profile(self) -> dict[str, str]:
         return {key: field.text().strip() for key, field in self.inputs.items()}
+
+
+class NotificationSettingsDialog(QDialog):
+    CHANNEL_LABELS = {
+        "windows": "Windows 本机通知",
+        "pushplus": "PushPlus 微信通知",
+        "serverchan": "Server酱 微信通知",
+        "ntfy": "ntfy 手机/网页通知",
+        "smtp": "邮件 SMTP 通知",
+    }
+    PRIVACY_LABELS = [
+        ("隐私模式", NOTIFICATION_PRIVACY_PRIVATE),
+        ("摘要模式", NOTIFICATION_PRIVACY_SUMMARY),
+        ("详细模式", NOTIFICATION_PRIVACY_DETAILED),
+    ]
+
+    def __init__(self, parent: QWidget, paths: AppPaths):
+        super().__init__(parent)
+        self.paths = paths
+        self.secret_store = NotificationSecretStore()
+        self.config = notification_config(load_config(paths))
+        self.enabled_fields: dict[str, QCheckBox] = {}
+        self.privacy_fields: dict[str, QComboBox] = {}
+        self.value_fields: dict[tuple[str, str], QLineEdit | QSpinBox | QComboBox] = {}
+        self.secret_fields: dict[str, QLineEdit] = {}
+        self.check_rows_layout: QVBoxLayout | None = None
+
+        self.setWindowTitle("多设备通知")
+        self.setModal(True)
+        self.setMinimumSize(900, 700)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("多设备通知")
+        title.setObjectName("detailTitle")
+        intro = QLabel("电脑仍只读查询成绩；手机、邮箱和微信类服务只接收通知。微信类和 ntfy 会经过第三方服务，建议使用隐私模式。")
+        intro.setObjectName("muted")
+        intro.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(intro)
+        layout.addWidget(self._notification_check_card())
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setObjectName("notificationScroll")
+        content = QWidget()
+        content.setObjectName("notificationContent")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 8, 0)
+        content_layout.setSpacing(12)
+
+        content_layout.addWidget(self._channel_card("windows", "保留原来的 Windows 系统通知。"))
+        content_layout.addWidget(self._channel_card("pushplus", "关注 PushPlus 后填写 token，可通过微信收到提醒。", secret_label="PushPlus token"))
+        content_layout.addWidget(self._channel_card("serverchan", "绑定 Server酱后填写 SendKey，可通过微信收到提醒。", secret_label="Server酱 SendKey"))
+        content_layout.addWidget(
+            self._channel_card(
+                "ntfy",
+                "适合 Android、iOS 或网页。公共 topic 不建议使用详细模式。",
+                fields=[("server_url", "服务器地址", "https://ntfy.sh"), ("topic", "Topic", "")],
+                secret_label="Bearer token（可选）",
+            )
+        )
+        content_layout.addWidget(
+            self._channel_card(
+                "smtp",
+                "通过邮箱把提醒发给自己，适合作为通用保底方案。",
+                fields=[
+                    ("host", "SMTP 服务器", ""),
+                    ("port", "端口", 587),
+                    ("username", "登录账号", ""),
+                    ("sender", "发件人", ""),
+                    ("recipient", "收件人", ""),
+                    ("security", "连接安全", "starttls"),
+                ],
+                secret_label="SMTP 密码/授权码",
+            )
+        )
+        content_layout.addStretch(1)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+
+        buttons = QDialogButtonBox()
+        test_button = buttons.addButton("发送测试通知", QDialogButtonBox.ActionRole)
+        save_button = buttons.addButton("保存", QDialogButtonBox.AcceptRole)
+        cancel_button = buttons.addButton("取消", QDialogButtonBox.RejectRole)
+        save_button.setObjectName("primaryButton")
+        test_button.setObjectName("secondaryButton")
+        cancel_button.setObjectName("secondaryButton")
+        test_button.clicked.connect(self._send_test_notification)
+        buttons.accepted.connect(self._save_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _channel_card(
+        self,
+        channel_id: str,
+        description: str,
+        *,
+        fields: list[tuple[str, str, object]] | None = None,
+        secret_label: str | None = None,
+    ) -> QFrame:
+        card = _card()
+        card.setObjectName("notificationCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+
+        top = QHBoxLayout()
+        top.setSpacing(12)
+        enabled = QCheckBox(self.CHANNEL_LABELS[channel_id])
+        enabled.setChecked(bool(self.config[channel_id].get("enabled")))
+        enabled.setObjectName("channelEnabled")
+        privacy = self._privacy_combo(str(self.config[channel_id].get("privacy") or NOTIFICATION_PRIVACY_PRIVATE))
+        privacy.setMinimumWidth(116)
+        privacy.setMaximumWidth(128)
+        self.enabled_fields[channel_id] = enabled
+        self.privacy_fields[channel_id] = privacy
+        privacy_label = QLabel("通知内容")
+        privacy_label.setObjectName("notificationPrivacyLabel")
+        top.addWidget(enabled, 1)
+        if channel_id != "windows":
+            guide = QPushButton("指引")
+            guide.setObjectName("notificationGuideButton")
+            guide.setToolTip(f"查看 {self.CHANNEL_LABELS[channel_id]} 的配置步骤")
+            guide.clicked.connect(lambda _checked=False, cid=channel_id: self._open_channel_guide(cid))
+            top.addWidget(guide)
+        top.addWidget(privacy_label)
+        top.addWidget(privacy)
+        layout.addLayout(top)
+
+        detail = QLabel(description)
+        detail.setObjectName("muted")
+        detail.setWordWrap(True)
+        layout.addWidget(detail)
+
+        if fields or secret_label:
+            form = QFormLayout()
+            form.setContentsMargins(0, 4, 0, 0)
+            for key, label, default in fields or []:
+                if key == "port":
+                    field = QSpinBox()
+                    field.setRange(1, 65535)
+                    field.setValue(int(self.config[channel_id].get(key) or default))
+                elif key == "security":
+                    field = QComboBox()
+                    for label_text, value in [("STARTTLS", "starttls"), ("SSL", "ssl"), ("不加密", "none")]:
+                        field.addItem(label_text, value)
+                    self._set_combo_value(field, str(self.config[channel_id].get(key) or default))
+                else:
+                    field = QLineEdit(str(self.config[channel_id].get(key) or default))
+                self.value_fields[(channel_id, key)] = field
+                form.addRow(label, field)
+            if secret_label:
+                secret = QLineEdit()
+                secret.setEchoMode(QLineEdit.Password)
+                secret.setPlaceholderText("已保存则留空不修改；需要更换时重新填写。")
+                self.secret_fields[channel_id] = secret
+                form.addRow(secret_label, secret)
+            layout.addLayout(form)
+        return card
+
+    def _notification_check_card(self) -> QFrame:
+        card = _card()
+        card.setObjectName("notificationCheckCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        top = QHBoxLayout()
+        title = QLabel("配置自检")
+        title.setObjectName("notificationCheckTitle")
+        refresh = QPushButton("刷新")
+        refresh.setObjectName("notificationGuideButton")
+        refresh.clicked.connect(self._refresh_notification_checks)
+        top.addWidget(title)
+        top.addStretch(1)
+        top.addWidget(refresh)
+        layout.addLayout(top)
+
+        self.check_rows_layout = QVBoxLayout()
+        self.check_rows_layout.setSpacing(8)
+        layout.addLayout(self.check_rows_layout)
+        self._refresh_notification_checks()
+        return card
+
+    def _refresh_notification_checks(self) -> None:
+        if self.check_rows_layout is None:
+            return
+        while self.check_rows_layout.count():
+            item = self.check_rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        rows = notification_setup_checks(self._current_notification_check_config(), self._preview_secret_store())
+        for row in rows:
+            self.check_rows_layout.addWidget(self._notification_check_row(row))
+
+    def _current_notification_check_config(self) -> dict:
+        config = load_config(self.paths)
+        notifications = notification_config(config)
+        for channel_id in self.CHANNEL_LABELS:
+            if channel_id in self.enabled_fields:
+                notifications[channel_id]["enabled"] = self.enabled_fields[channel_id].isChecked()
+            if channel_id in self.privacy_fields:
+                notifications[channel_id]["privacy"] = str(self.privacy_fields[channel_id].currentData())
+        for (channel_id, key), field in self.value_fields.items():
+            if isinstance(field, QSpinBox):
+                notifications[channel_id][key] = field.value()
+            elif isinstance(field, QComboBox):
+                notifications[channel_id][key] = str(field.currentData())
+            else:
+                notifications[channel_id][key] = field.text().strip()
+        config["notifications"] = notifications
+        return config
+
+    def _preview_secret_store(self):
+        parent = self
+
+        class PreviewSecretStore:
+            def get_secret(self, channel: str) -> str:
+                field = parent.secret_fields.get(channel)
+                pending = field.text().strip() if field else ""
+                return pending or parent.secret_store.get_secret(channel)
+
+        return PreviewSecretStore()
+
+    def _notification_check_row(self, row) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("notificationCheckRow")
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(10)
+        dot = QLabel()
+        dot.setObjectName(f"notificationDot_{row.status}")
+        dot.setFixedSize(9, 9)
+        title = QLabel(row.label)
+        title.setObjectName("notificationCheckLabel")
+        summary = QLabel(row.summary)
+        summary.setObjectName(f"notificationCheckSummary_{row.status}")
+        detail = QLabel(row.detail)
+        detail.setObjectName("notificationCheckDetail")
+        detail.setWordWrap(True)
+        layout.addWidget(dot)
+        layout.addWidget(title)
+        layout.addWidget(summary)
+        layout.addWidget(detail, 1)
+        return frame
+
+    def _open_channel_guide(self, channel_id: str) -> None:
+        dialog = NotificationGuideDialog(self, channel_id)
+        dialog.exec()
+
+    def _privacy_combo(self, value: str) -> QComboBox:
+        combo = QComboBox()
+        for label, mode in self.PRIVACY_LABELS:
+            combo.addItem(label, mode)
+        self._set_combo_value(combo, value)
+        return combo
+
+    @staticmethod
+    def _set_combo_value(combo: QComboBox, value: str) -> None:
+        index = combo.findData(value)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+
+    def _save_config(self) -> None:
+        config = load_config(self.paths)
+        notifications = notification_config(config)
+        for channel_id in self.CHANNEL_LABELS:
+            notifications[channel_id]["enabled"] = self.enabled_fields[channel_id].isChecked()
+            notifications[channel_id]["privacy"] = str(self.privacy_fields[channel_id].currentData())
+        for (channel_id, key), field in self.value_fields.items():
+            if isinstance(field, QSpinBox):
+                notifications[channel_id][key] = field.value()
+            elif isinstance(field, QComboBox):
+                notifications[channel_id][key] = str(field.currentData())
+            else:
+                notifications[channel_id][key] = field.text().strip()
+        config["notifications"] = notifications
+        save_config(self.paths, config)
+        for channel_id, field in self.secret_fields.items():
+            value = field.text().strip()
+            if value:
+                self.secret_store.set_secret(channel_id, value)
+                field.clear()
+
+    def _save_and_accept(self) -> None:
+        try:
+            self._save_config()
+        except Exception as exc:
+            QMessageBox.critical(self, "多设备通知", f"保存失败：{type(exc).__name__}: {exc}")
+            return
+        self._refresh_notification_checks()
+        self.accept()
+
+    def _send_test_notification(self) -> None:
+        try:
+            self._save_config()
+            results = build_notifier(self.paths, suppress_errors=False).send_test(
+                "GDUT 成绩提醒测试",
+                "这是一条多设备通知测试。",
+            )
+        except Exception as exc:
+            self._refresh_notification_checks()
+            QMessageBox.critical(self, "发送测试通知", f"发送失败：\n\n{notification_error_message(exc)}")
+            return
+        self._refresh_notification_checks()
+        NotificationTestResultDialog(self, results).exec()
+
+
+class NotificationTestResultDialog(QDialog):
+    def __init__(self, parent: QWidget, results):
+        super().__init__(parent)
+        self.setWindowTitle("发送测试通知")
+        self.setModal(True)
+        self.setMinimumSize(620, 360)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(14)
+
+        success_count = sum(1 for result in results if result.ok)
+        failed_count = sum(1 for result in results if not result.ok)
+        title = QLabel("测试结果")
+        title.setObjectName("detailTitle")
+        if results:
+            intro_text = f"已测试 {len(results)} 个启用渠道：{success_count} 个成功，{failed_count} 个需要处理。"
+        else:
+            intro_text = "当前没有启用任何通知渠道。请先勾选至少一个渠道并保存配置。"
+        intro = QLabel(intro_text)
+        intro.setObjectName("muted")
+        intro.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(intro)
+
+        rows = QVBoxLayout()
+        rows.setSpacing(9)
+        for result in results:
+            rows.addWidget(self._result_row(result))
+        if not results:
+            empty = QLabel("未启用通知渠道")
+            empty.setObjectName("muted")
+            rows.addWidget(empty)
+        layout.addLayout(rows)
+        layout.addStretch(1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    def _result_row(self, result) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("notificationTestRow")
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
+        dot = QLabel()
+        dot.setObjectName("notificationDot_ok" if result.ok else "notificationDot_warning")
+        dot.setFixedSize(9, 9)
+        label = QLabel(result.label)
+        label.setObjectName("notificationCheckLabel")
+        status = QLabel("成功" if result.ok else "失败")
+        status.setObjectName("notificationCheckSummary_ok" if result.ok else "notificationCheckSummary_warning")
+        detail = QLabel(result.detail)
+        detail.setObjectName("notificationCheckDetail")
+        detail.setWordWrap(True)
+        layout.addWidget(dot)
+        layout.addWidget(label)
+        layout.addWidget(status)
+        layout.addWidget(detail, 1)
+        return frame
+
+
+class NotificationGuideDialog(QDialog):
+    GUIDES = {
+        "pushplus": {
+            "title": "PushPlus 微信通知配置指引",
+            "url": "https://www.pushplus.plus/",
+            "steps": [
+                ("注册并关注", "打开 PushPlus 官网，用微信扫码登录或注册，并按页面提示关注公众号。"),
+                ("复制 token", "进入个人中心或一对一推送页面，复制自己的 token。不要把 token 发给别人。"),
+                ("填回应用", "回到本页，在 PushPlus token 中粘贴 token，勾选 PushPlus 微信通知。"),
+                ("发送测试", "建议先保持隐私模式，点击发送测试通知。手机能收到后再保存。"),
+            ],
+        },
+        "serverchan": {
+            "title": "Server酱 微信通知配置指引",
+            "url": "https://sct.ftqq.com/",
+            "steps": [
+                ("绑定微信", "打开 Server酱官网，登录后按页面提示完成微信绑定。"),
+                ("复制 SendKey", "在发送消息页面复制 SendKey。SendKey 等同通知密钥，请不要公开。"),
+                ("填回应用", "回到本页，在 Server酱 SendKey 中粘贴 SendKey，勾选 Server酱 微信通知。"),
+                ("发送测试", "先用隐私模式测试。若提示失败，重点检查 SendKey、网络和 Server酱账号状态。"),
+            ],
+        },
+        "ntfy": {
+            "title": "ntfy 手机/网页通知配置指引",
+            "url": "https://docs.ntfy.sh/",
+            "steps": [
+                ("选择服务器", "可先使用默认 https://ntfy.sh，也可以填写自建 ntfy 服务器地址。"),
+                ("设置 Topic", "填写一个足够随机的 Topic，例如 gdut-grade-加一串随机字符。公共 Topic 不建议放详细成绩。"),
+                ("手机订阅", "在手机 ntfy App 或网页中订阅同一个 Topic。需要鉴权时再填写 Bearer token。"),
+                ("发送测试", "点击发送测试通知。公共服务器建议一直使用隐私模式或摘要模式。"),
+            ],
+        },
+        "smtp": {
+            "title": "邮件 SMTP 通知配置指引",
+            "url": "https://support.qq.com/products/378101/faqs/104931",
+            "steps": [
+                ("准备授权码", "到邮箱设置中开启 SMTP/IMAP 服务，生成授权码。不要填写网页登录密码。"),
+                ("填写服务器", "常见端口是 STARTTLS 587 或 SSL 465。发件人通常和登录账号一致。"),
+                ("填写收件人", "收件人可以是自己的邮箱；想发到手机，建议使用常用邮箱 App 的推送。"),
+                ("发送测试", "如果失败，检查服务器地址、端口、安全类型、授权码和邮箱服务是否开启。"),
+            ],
+        },
+    }
+
+    def __init__(self, parent: QWidget, channel_id: str):
+        super().__init__(parent)
+        self.guide = self.GUIDES[channel_id]
+        self.step_index = 0
+        self.setWindowTitle(self.guide["title"])
+        self.setModal(True)
+        self.setMinimumSize(620, 390)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(14)
+
+        title = QLabel(self.guide["title"])
+        title.setObjectName("detailTitle")
+        layout.addWidget(title)
+
+        intro = QLabel("按下面几步配置即可。通知密钥只会保存在本机系统凭据里，不会写入配置文件。")
+        intro.setObjectName("muted")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.step_card = QFrame()
+        self.step_card.setObjectName("notificationGuideStep")
+        step_layout = QVBoxLayout(self.step_card)
+        step_layout.setContentsMargins(18, 16, 18, 16)
+        step_layout.setSpacing(10)
+
+        self.progress = QLabel()
+        self.progress.setObjectName("guideStepIndex")
+        self.step_title = QLabel()
+        self.step_title.setObjectName("guideStepTitle")
+        self.step_body = QLabel()
+        self.step_body.setObjectName("guideStepBody")
+        self.step_body.setWordWrap(True)
+        step_layout.addWidget(self.progress)
+        step_layout.addWidget(self.step_title)
+        step_layout.addWidget(self.step_body)
+        step_layout.addStretch(1)
+        layout.addWidget(self.step_card, 1)
+
+        hint = QLabel("建议先用隐私模式完成测试；确认能收到通知后，再按需要改成摘要或详细模式。")
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        buttons = QHBoxLayout()
+        self.open_button = QPushButton("打开官网/文档")
+        self.open_button.setObjectName("secondaryButton")
+        self.prev_button = QPushButton("上一步")
+        self.prev_button.setObjectName("secondaryButton")
+        self.next_button = QPushButton("下一步")
+        self.next_button.setObjectName("primaryButton")
+        close_button = QPushButton("关闭")
+        close_button.setObjectName("secondaryButton")
+        self.open_button.clicked.connect(self._open_url)
+        self.prev_button.clicked.connect(self._prev_step)
+        self.next_button.clicked.connect(self._next_step)
+        close_button.clicked.connect(self.accept)
+        buttons.addWidget(self.open_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.prev_button)
+        buttons.addWidget(self.next_button)
+        buttons.addWidget(close_button)
+        layout.addLayout(buttons)
+        self._render_step()
+
+    def _render_step(self) -> None:
+        steps = self.guide["steps"]
+        title, body = steps[self.step_index]
+        self.progress.setText(f"第 {self.step_index + 1} / {len(steps)} 步")
+        self.step_title.setText(title)
+        self.step_body.setText(body)
+        self.prev_button.setEnabled(self.step_index > 0)
+        self.next_button.setText("完成" if self.step_index == len(steps) - 1 else "下一步")
+
+    def _prev_step(self) -> None:
+        if self.step_index > 0:
+            self.step_index -= 1
+            self._render_step()
+
+    def _next_step(self) -> None:
+        if self.step_index >= len(self.guide["steps"]) - 1:
+            self.accept()
+            return
+        self.step_index += 1
+        self._render_step()
+
+    def _open_url(self) -> None:
+        QDesktopServices.openUrl(QUrl(str(self.guide["url"])))
+
+
+class CleanupAssistantDialog(QDialog):
+    def __init__(self, parent: QWidget, paths: AppPaths):
+        super().__init__(parent)
+        self.paths = paths
+        self.setWindowTitle("卸载辅助")
+        self.setModal(True)
+        self.setMinimumSize(660, 500)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("卸载辅助")
+        title.setObjectName("detailTitle")
+        layout.addWidget(title)
+
+        intro = QLabel("这里用于处理便携版目录被直接删除、自启动还残留，或卸载前想确认哪些数据会保留的情况。")
+        intro.setObjectName("muted")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        self.status_label.setObjectName("cleanupStatus")
+        layout.addWidget(self.status_label)
+
+        guide = QFrame()
+        guide.setObjectName("cleanupGuide")
+        guide_layout = QVBoxLayout(guide)
+        guide_layout.setContentsMargins(16, 14, 16, 14)
+        guide_layout.setSpacing(10)
+        guide_layout.addWidget(self._guide_item("便携版提示", "不要直接删除正在使用的便携版目录。先在设置页取消自启动，再删除程序目录会更干净。"))
+        guide_layout.addWidget(self._guide_item("检测到残留启动项", "如果便携版目录已经删掉，应用会在环境检查里提示残留启动项；这里可以一键清理残留。"))
+        guide_layout.addWidget(self._guide_item("卸载辅助", "清理启动项不会删除 Windows 凭据管理器中的密码和通知密钥；如需删除，请到系统凭据管理器手动处理。"))
+        layout.addWidget(guide, 1)
+
+        self.remove_data = QCheckBox("同时删除本地配置、Cookie、成绩快照和日志")
+        self.remove_data.setToolTip("默认不删除本地数据。勾选后会删除 ~/.gdut-grade-monitor，之后需要重新配置。")
+        layout.addWidget(self.remove_data)
+
+        buttons = QHBoxLayout()
+        cleanup_button = QPushButton("一键清理残留")
+        cleanup_button.setObjectName("primaryButton")
+        cleanup_button.clicked.connect(self._cleanup)
+        open_data = QPushButton("打开数据目录")
+        open_data.setObjectName("secondaryButton")
+        open_data.clicked.connect(self._open_data_dir)
+        close = QPushButton("关闭")
+        close.setObjectName("secondaryButton")
+        close.clicked.connect(self.accept)
+        buttons.addWidget(cleanup_button)
+        buttons.addWidget(open_data)
+        buttons.addStretch(1)
+        buttons.addWidget(close)
+        layout.addLayout(buttons)
+        self._refresh_status()
+
+    def _guide_item(self, title: str, body: str) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("cleanupGuideItem")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(4)
+        heading = QLabel(title)
+        heading.setObjectName("cleanupGuideTitle")
+        text = QLabel(body)
+        text.setObjectName("muted")
+        text.setWordWrap(True)
+        layout.addWidget(heading)
+        layout.addWidget(text)
+        return frame
+
+    def _refresh_status(self) -> None:
+        if startup_script_is_stale():
+            self.status_label.setText("检测到残留启动项：启动文件指向的程序已经不存在，可以点击“一键清理残留”。")
+            self.status_label.setProperty("level", "warning")
+        else:
+            self.status_label.setText("未检测到明显残留启动项。仍可用于取消本工具创建的启动文件和计划任务。")
+            self.status_label.setProperty("level", "ok")
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
+
+    def _cleanup(self) -> None:
+        remove_data = self.remove_data.isChecked()
+        if remove_data:
+            answer = QMessageBox.question(
+                self,
+                "一键清理残留",
+                "将删除本地配置、Cookie、成绩快照和日志。\n\n确定继续吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+        try:
+            result = cleanup_residue(remove_data=remove_data)
+        except Exception as exc:
+            QMessageBox.critical(self, "一键清理残留", f"清理失败：{type(exc).__name__}: {exc}")
+            return
+        self._refresh_status()
+        parent = self.parent()
+        if hasattr(parent, "refresh_all"):
+            parent.refresh_all()
+        QMessageBox.information(self, "一键清理残留", cleanup_summary(result))
+
+    def _open_data_dir(self) -> None:
+        self.paths.ensure()
+        os.startfile(self.paths.root)
 
 
 class GradeDetailDialog(QDialog):
@@ -1034,13 +1661,16 @@ class GradeMonitorQtApp(QMainWindow):
         title.setObjectName("title")
         subtitle = QLabel("这里只记录已经提醒过的新增成绩和成绩变化，不包含完整个人成绩明细。")
         subtitle.setObjectName("muted")
-        self.history_table = QTableWidget(0, 5)
-        self.history_table.setHorizontalHeaderLabels(["时间", "类型", "学期", "课程", "成绩"])
+        self.history_table = QTableWidget(0, 7)
+        self.history_table.setHorizontalHeaderLabels(["时间", "类型", "学期", "课程", "成绩", "通知渠道", "发送结果"])
         self._prepare_table(self.history_table)
         self.history_table.setColumnWidth(0, 170)
         self.history_table.setColumnWidth(1, 90)
         self.history_table.setColumnWidth(2, 100)
+        self.history_table.setColumnWidth(4, 78)
+        self.history_table.setColumnWidth(6, 110)
         self.history_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.history_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
         page.layout().addWidget(title)
         page.layout().addWidget(subtitle)
         page.layout().addWidget(self.history_table, 1)
@@ -1078,8 +1708,27 @@ class GradeMonitorQtApp(QMainWindow):
         update = QPushButton("检查更新")
         update.setObjectName("secondaryButton")
         update.clicked.connect(self.check_for_updates)
+        cleanup = QPushButton("卸载辅助")
+        cleanup.setObjectName("secondaryButton")
+        cleanup.setToolTip("清理便携版残留启动项，或查看卸载前的数据保留说明。")
+        cleanup.clicked.connect(self.open_cleanup_assistant)
+        notifications = QPushButton("多设备通知")
+        notifications.setObjectName("secondaryButton")
+        notifications.clicked.connect(self.open_notification_settings)
+        export_settings_button = QPushButton("导出设置")
+        export_settings_button.setObjectName("secondaryButton")
+        export_settings_button.setToolTip("导出可迁移的非敏感设置；不会导出学号、密码、Cookie 或通知密钥。")
+        export_settings_button.clicked.connect(self.export_settings_file)
+        import_settings_button = QPushButton("导入设置")
+        import_settings_button.setObjectName("secondaryButton")
+        import_settings_button.setToolTip("导入另一台电脑导出的非敏感设置；不会覆盖本机已保存账号。")
+        import_settings_button.clicked.connect(self.import_settings_file)
+        reset_settings = QPushButton("恢复默认")
+        reset_settings.setObjectName("secondaryButton")
+        reset_settings.setToolTip("恢复推荐配置，但保留已保存账号和新手向导状态。")
+        reset_settings.clicked.connect(self.reset_settings_to_defaults)
 
-        for button in [save, login, install, uninstall, open_dir, update]:
+        for button in [save, login, install, uninstall, open_dir, update, cleanup, notifications, export_settings_button, import_settings_button, reset_settings]:
             button.setMinimumWidth(108)
 
         page.layout().addWidget(title)
@@ -1091,7 +1740,9 @@ class GradeMonitorQtApp(QMainWindow):
         settings_grid.addWidget(form_card, 0, 0)
         settings_grid.addWidget(self._settings_action_card("账号", "重新登录或初始化本机配置。", [login]), 0, 1)
         settings_grid.addWidget(self._settings_action_card("后台启动", "控制 Windows 登录后是否自动检查成绩。", [install, uninstall]), 1, 0)
-        settings_grid.addWidget(self._settings_action_card("数据与更新", "打开本地数据目录，或检查 GitHub 新版本。", [open_dir, update]), 1, 1)
+        settings_grid.addWidget(self._settings_action_card("多设备通知", "配置微信类、ntfy 或邮件提醒，并设置通知隐私级别。", [notifications]), 1, 1)
+        settings_grid.addWidget(self._settings_action_card("配置迁移", "导出或导入非敏感设置，换电脑时不用重新调整偏好。", [export_settings_button, import_settings_button, reset_settings]), 2, 0, 1, 2)
+        settings_grid.addWidget(self._settings_action_card("数据与更新", "打开本地数据目录、检查 GitHub 新版本，或处理卸载残留。", [open_dir, update, cleanup]), 3, 0, 1, 2)
         settings_grid.setColumnStretch(0, 1)
         settings_grid.setColumnStretch(1, 1)
         form_actions = QHBoxLayout()
@@ -1490,7 +2141,7 @@ class GradeMonitorQtApp(QMainWindow):
         GradeDetailDialog(self, self.visible_grades[row]).exec()
 
     def refresh_history(self) -> None:
-        self._fill_table(self.history_table, history_table_rows(load_state(self.paths)))
+        self._fill_table(self.history_table, history_table_rows(load_state(self.paths), include_delivery=True))
 
     def refresh_doctor(self) -> None:
         self._fill_table(self.doctor_table, doctor_table_rows(run_checks(self.paths)))
@@ -1625,7 +2276,7 @@ class GradeMonitorQtApp(QMainWindow):
         password = CredentialStore().get_password(student_id) if student_id else None
         session = AuthManager(self.paths).get_session(auto_login=True, student_id=student_id, password=password)
         fetcher = GradeApiClient(session)
-        monitor = GradeMonitor(self.paths, fetcher=fetcher, notifier=WindowsNotifier())
+        monitor = GradeMonitor(self.paths, fetcher=fetcher, notifier=build_notifier(self.paths))
         changes = monitor.run_once()
         return fetcher.fetch_grades(), changes
 
@@ -1651,6 +2302,16 @@ class GradeMonitorQtApp(QMainWindow):
         self.refresh_status()
         QMessageBox.information(self, "设置", f"查询频率已设置为每 {config['poll_interval_minutes']} 分钟。")
 
+    def open_notification_settings(self) -> None:
+        dialog = NotificationSettingsDialog(self, self.paths)
+        if dialog.exec() == QDialog.Accepted:
+            self.refresh_status()
+            QMessageBox.information(self, "多设备通知", "多设备通知设置已保存。")
+
+    def open_cleanup_assistant(self) -> None:
+        dialog = CleanupAssistantDialog(self, self.paths)
+        dialog.exec()
+
     def install_startup(self) -> None:
         result = install_task_or_startup(prefer_startup=True)
         if result.returncode == 0:
@@ -1670,6 +2331,55 @@ class GradeMonitorQtApp(QMainWindow):
 
     def open_data_dir(self) -> None:
         os.startfile(self.paths.root)
+
+    def export_settings_file(self) -> None:
+        target, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出设置",
+            str(self.paths.root / "gdut-grade-monitor-settings.json"),
+            "JSON 文件 (*.json)",
+        )
+        if not target:
+            return
+        try:
+            result = export_settings(self.paths, Path(target))
+        except Exception as exc:
+            QMessageBox.critical(self, "导出设置失败", f"{type(exc).__name__}: {exc}")
+            return
+        QMessageBox.information(self, "导出设置", f"已导出非敏感设置:\n{result}\n\n不包含学号、密码、Cookie 或通知密钥。")
+
+    def import_settings_file(self) -> None:
+        source, _ = QFileDialog.getOpenFileName(
+            self,
+            "导入设置",
+            str(self.paths.root),
+            "JSON 文件 (*.json)",
+        )
+        if not source:
+            return
+        try:
+            config = import_settings(self.paths, Path(source))
+        except Exception as exc:
+            QMessageBox.critical(self, "导入设置失败", f"{type(exc).__name__}: {exc}")
+            return
+        self.interval.setValue(int(config.get("poll_interval_minutes", 30)))
+        self.refresh_all()
+        QMessageBox.information(self, "导入设置", "已导入非敏感设置。本机已保存账号不会被覆盖，通知密钥仍需在凭据管理器中重新保存。")
+
+    def reset_settings_to_defaults(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "恢复默认",
+            "是否恢复推荐配置？\n\n会重置查询频率、暂停状态和通知开关，但保留已保存账号和本地成绩快照。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        config = reset_config(self.paths)
+        self.interval.setValue(int(config.get("poll_interval_minutes", 30)))
+        self.refresh_all()
+        QMessageBox.information(self, "恢复默认", "已恢复推荐配置。")
 
     def open_log_file(self) -> None:
         self.paths.ensure()
@@ -1907,6 +2617,99 @@ class GradeMonitorQtApp(QMainWindow):
             QFrame#helpItem { background: #f8fafc; border: 1px solid #edf2f7; border-radius: 10px; }
             #helpBullet { background: #2563eb; border-radius: 4px; }
             #helpItemText { color: #334155; }
+            QScrollArea#notificationScroll, QWidget#notificationContent { background: transparent; }
+            QFrame#notificationCard {
+                background: #ffffff;
+                border: 1px solid #e3e8f0;
+                border-radius: 14px;
+            }
+            QFrame#notificationCard QLabel { color: #334155; }
+            QFrame#notificationCard QLabel#muted { color: #64748b; }
+            QFrame#notificationCard QCheckBox { color: #0f172a; font-weight: 700; spacing: 9px; }
+            QFrame#notificationCard QLineEdit,
+            QFrame#notificationCard QComboBox,
+            QFrame#notificationCard QSpinBox {
+                background: #ffffff;
+                color: #0f172a;
+                border: 1px solid #dbe3ef;
+                border-radius: 9px;
+                min-height: 24px;
+                padding: 7px 10px;
+            }
+            QFrame#notificationCard QLineEdit:focus,
+            QFrame#notificationCard QComboBox:focus,
+            QFrame#notificationCard QSpinBox:focus {
+                border: 1px solid #2563eb;
+            }
+            QPushButton#notificationGuideButton {
+                min-width: 54px;
+                padding: 6px 12px;
+                border-radius: 8px;
+                background: #eef4ff;
+                color: #1d4ed8;
+                font-weight: 800;
+                border: 1px solid #dbe8ff;
+            }
+            QPushButton#notificationGuideButton:hover { background: #dbeafe; }
+            QFrame#notificationGuideStep {
+                background: #f8fafc;
+                border: 1px solid #e3e8f0;
+                border-radius: 14px;
+            }
+            QFrame#notificationCheckCard {
+                background: #f8fafc;
+                border: 1px solid #e3e8f0;
+                border-radius: 14px;
+            }
+            #notificationCheckTitle { color: #0f172a; font-size: 15px; font-weight: 900; }
+            QFrame#notificationCheckRow {
+                background: #ffffff;
+                border: 1px solid #edf2f7;
+                border-radius: 10px;
+            }
+            QFrame#notificationTestRow {
+                background: #f8fafc;
+                border: 1px solid #e3e8f0;
+                border-radius: 10px;
+            }
+            QFrame#cleanupGuide {
+                background: #f8fafc;
+                border: 1px solid #e3e8f0;
+                border-radius: 14px;
+            }
+            QFrame#cleanupGuideItem {
+                background: #ffffff;
+                border: 1px solid #edf2f7;
+                border-radius: 10px;
+            }
+            #cleanupGuideTitle { color: #0f172a; font-size: 14px; font-weight: 900; }
+            QLabel#cleanupStatus[level="warning"] {
+                background: #fffbeb;
+                color: #92400e;
+                border: 1px solid #fde68a;
+                border-radius: 10px;
+                padding: 10px 12px;
+                font-weight: 800;
+            }
+            QLabel#cleanupStatus[level="ok"] {
+                background: #ecfdf5;
+                color: #047857;
+                border: 1px solid #bbf7d0;
+                border-radius: 10px;
+                padding: 10px 12px;
+                font-weight: 800;
+            }
+            #notificationCheckLabel { color: #0f172a; font-weight: 800; min-width: 118px; }
+            #notificationCheckDetail { color: #64748b; font-size: 12px; }
+            #notificationCheckSummary_ok { color: #047857; font-weight: 900; min-width: 78px; }
+            #notificationCheckSummary_warning { color: #b45309; font-weight: 900; min-width: 96px; }
+            #notificationCheckSummary_disabled { color: #64748b; font-weight: 800; min-width: 78px; }
+            #notificationDot_ok { background: #22c55e; border-radius: 4px; }
+            #notificationDot_warning { background: #f59e0b; border-radius: 4px; }
+            #notificationDot_disabled { background: #cbd5e1; border-radius: 4px; }
+            #guideStepIndex { color: #2563eb; font-size: 13px; font-weight: 800; }
+            #guideStepTitle { color: #0f172a; font-size: 20px; font-weight: 900; }
+            #guideStepBody { color: #334155; line-height: 155%; }
             QFrame#card { background: white; border: 1px solid #e3e8f0; border-radius: 16px; }
             QFrame#statusPanel { background: #111827; border-radius: 18px; }
             #statusEyebrow { color: #93c5fd; font-size: 13px; }
@@ -1922,12 +2725,44 @@ class GradeMonitorQtApp(QMainWindow):
             QPushButton#primaryButton { background: #2563eb; color: white; font-weight: 700; }
             QPushButton#secondaryButton { background: #eef4ff; color: #1d4ed8; }
             QPushButton#secondaryButton:hover { background: #dbeafe; }
+            QMenu {
+                background: #ffffff;
+                color: #0f172a;
+                border: 1px solid #dbe3ef;
+                border-radius: 10px;
+                padding: 6px;
+            }
+            QMenu::item {
+                padding: 7px 28px 7px 24px;
+                border-radius: 7px;
+                background: transparent;
+            }
+            QMenu::item:selected { background: #eaf2ff; color: #1d4ed8; }
+            QMenu::item:disabled { color: #94a3b8; }
+            QMenu::separator { height: 1px; background: #e5e7eb; margin: 5px 8px; }
+            QToolTip {
+                background: #ffffff;
+                color: #0f172a;
+                border: 1px solid #dbe3ef;
+                border-radius: 8px;
+                padding: 6px 8px;
+            }
             QMessageBox, QDialog { background: #ffffff; color: #111827; }
             QMessageBox QLabel, QDialog QLabel { color: #111827; }
             QMessageBox QLabel#muted, QDialog QLabel#muted { color: #64748b; }
             QMessageBox QPushButton, QDialogButtonBox QPushButton { min-width: 78px; padding: 9px 16px; border-radius: 9px; background: #2563eb; color: white; }
             QMessageBox QPushButton:hover, QDialogButtonBox QPushButton:hover { background: #1d4ed8; }
             QLineEdit, QComboBox, QSpinBox { background: white; border: 1px solid #dbe3ef; border-radius: 9px; padding: 8px 10px; }
+            QComboBox QAbstractItemView {
+                background: #ffffff;
+                color: #0f172a;
+                selection-background-color: #eaf2ff;
+                selection-color: #1d4ed8;
+                border: 1px solid #dbe3ef;
+                border-radius: 8px;
+                padding: 4px;
+                outline: 0;
+            }
             QCheckBox { color: #334155; spacing: 8px; }
             QTableWidget { background: white; border: 1px solid #e3e8f0; border-radius: 12px; gridline-color: #eef2f7; }
             QTableWidget::item { padding: 7px 8px; }
@@ -1970,6 +2805,100 @@ def _dialog_stylesheet() -> str:
             background: #2563eb; color: white;
         }
         QMessageBox QPushButton:hover, QDialogButtonBox QPushButton:hover { background: #1d4ed8; }
+        QMenu {
+            background: #ffffff;
+            color: #0f172a;
+            border: 1px solid #dbe3ef;
+            border-radius: 10px;
+            padding: 6px;
+        }
+        QMenu::item {
+            padding: 7px 28px 7px 24px;
+            border-radius: 7px;
+            background: transparent;
+        }
+        QMenu::item:selected { background: #eaf2ff; color: #1d4ed8; }
+        QMenu::item:disabled { color: #94a3b8; }
+        QMenu::separator { height: 1px; background: #e5e7eb; margin: 5px 8px; }
+        QToolTip {
+            background: #ffffff;
+            color: #0f172a;
+            border: 1px solid #dbe3ef;
+            border-radius: 8px;
+            padding: 6px 8px;
+        }
+        QComboBox QAbstractItemView {
+            background: #ffffff;
+            color: #0f172a;
+            selection-background-color: #eaf2ff;
+            selection-color: #1d4ed8;
+            border: 1px solid #dbe3ef;
+            border-radius: 8px;
+            padding: 4px;
+            outline: 0;
+        }
+        QScrollArea#notificationScroll, QWidget#notificationContent { background: transparent; }
+        QFrame#notificationCard {
+            background: #ffffff;
+            border: 1px solid #e3e8f0;
+            border-radius: 14px;
+        }
+        QFrame#notificationCard QLabel { color: #334155; }
+        QFrame#notificationCard QLabel#muted { color: #64748b; }
+        QFrame#notificationCard QCheckBox { color: #0f172a; font-weight: 700; spacing: 9px; }
+        QFrame#notificationCard QLineEdit,
+        QFrame#notificationCard QComboBox,
+        QFrame#notificationCard QSpinBox {
+            background: #ffffff;
+            color: #0f172a;
+            border: 1px solid #dbe3ef;
+            border-radius: 9px;
+            min-height: 24px;
+            padding: 7px 10px;
+        }
+        QFrame#notificationCard QLineEdit:focus,
+        QFrame#notificationCard QComboBox:focus,
+        QFrame#notificationCard QSpinBox:focus {
+            border: 1px solid #2563eb;
+        }
+        QPushButton#primaryButton {
+            min-width: 90px; padding: 9px 18px; border-radius: 9px;
+            background: #2563eb; color: white; border: 0; font-weight: 800;
+        }
+        QPushButton#secondaryButton {
+            min-width: 78px; padding: 9px 16px; border-radius: 9px;
+            background: #eef4ff; color: #1d4ed8; border: 0; font-weight: 700;
+        }
+        QPushButton#notificationGuideButton {
+            min-width: 54px; padding: 6px 12px; border-radius: 8px;
+            background: #eef4ff; color: #1d4ed8; font-weight: 800;
+            border: 1px solid #dbe8ff;
+        }
+        QPushButton#notificationGuideButton:hover, QPushButton#secondaryButton:hover { background: #dbeafe; }
+        QFrame#notificationGuideStep {
+            background: #f8fafc; border: 1px solid #e3e8f0; border-radius: 14px;
+        }
+        QFrame#notificationCheckCard {
+            background: #f8fafc; border: 1px solid #e3e8f0; border-radius: 14px;
+        }
+        #notificationCheckTitle { color: #0f172a; font-size: 15px; font-weight: 900; }
+        QFrame#notificationCheckRow {
+            background: #ffffff; border: 1px solid #edf2f7; border-radius: 10px;
+        }
+        QFrame#notificationTestRow {
+            background: #f8fafc; border: 1px solid #e3e8f0; border-radius: 10px;
+        }
+        #notificationCheckLabel { color: #0f172a; font-weight: 800; min-width: 118px; }
+        #notificationCheckDetail { color: #64748b; font-size: 12px; }
+        #notificationCheckSummary_ok { color: #047857; font-weight: 900; min-width: 78px; }
+        #notificationCheckSummary_warning { color: #b45309; font-weight: 900; min-width: 96px; }
+        #notificationCheckSummary_disabled { color: #64748b; font-weight: 800; min-width: 78px; }
+        #notificationDot_ok { background: #22c55e; border-radius: 4px; }
+        #notificationDot_warning { background: #f59e0b; border-radius: 4px; }
+        #notificationDot_disabled { background: #cbd5e1; border-radius: 4px; }
+        #guideStepIndex { color: #2563eb; font-size: 13px; font-weight: 800; }
+        #guideStepTitle { color: #0f172a; font-size: 20px; font-weight: 900; }
+        #guideStepBody { color: #334155; line-height: 155%; }
     """
 
 

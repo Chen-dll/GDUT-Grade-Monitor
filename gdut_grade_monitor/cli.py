@@ -10,13 +10,15 @@ import click
 
 from .auth import AuthManager, BrowserFillMismatchError, PlaywrightBrowserMissingError
 from .client import GradeApiClient, GradeResponseError
+from .cleanup import cleanup_residue, cleanup_summary
 from .credentials import CredentialStore, PasswordInputError
 from .diagnostics import create_diagnostics_zip, mask_student_id
 from .doctor import overall_ok, render_results, run_checks
 from .monitor import GradeMonitor
-from .notify import WindowsNotifier
-from .storage import AppPaths, load_config, save_config, set_poll_interval
-from .task import install_task_or_startup, startup_script_exists, task_exists, uninstall_task_and_startup
+from .notification_channels import build_notifier
+from .settings_backup import export_settings, import_settings
+from .storage import AppPaths, load_config, reset_config, save_config, set_poll_interval
+from .task import autostart_exists, install_task_or_startup, uninstall_task_and_startup
 
 
 def _paths() -> AppPaths:
@@ -39,7 +41,7 @@ def _make_monitor(paths: AppPaths) -> GradeMonitor:
     student_id = config.get("student_id", "")
     password = CredentialStore().get_password(student_id) if student_id else None
     session = AuthManager(paths).get_session(auto_login=True, student_id=student_id, password=password)
-    return GradeMonitor(paths=paths, fetcher=GradeApiClient(session), notifier=WindowsNotifier())
+    return GradeMonitor(paths=paths, fetcher=GradeApiClient(session), notifier=build_notifier(paths))
 
 
 @click.group()
@@ -137,6 +139,8 @@ def task_install():
         save_config(paths, config)
         if result.mode == "startup":
             click.echo("Scheduled task access was denied; installed user Startup fallback instead.")
+        elif result.mode == "run-key":
+            click.echo("Scheduled task and Startup folder were unavailable; installed current-user Run fallback instead.")
         else:
             click.echo("Scheduled task installed.")
     else:
@@ -160,7 +164,7 @@ def task_uninstall():
 
 @task.command("status")
 def task_status():
-    click.echo("installed" if task_exists() or startup_script_exists() else "not installed")
+    click.echo("installed" if autostart_exists(include_schtasks=True) else "not installed")
 
 
 @main.group()
@@ -184,6 +188,29 @@ def config_show():
     if config.get("student_id"):
         config["student_id"] = mask_student_id(str(config["student_id"]))
     click.echo(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+@config.command("export")
+@click.option("--output", type=click.Path(dir_okay=False, path_type=Path), required=True, help="Output JSON path.")
+def config_export(output: Path):
+    """Export non-sensitive settings for migration."""
+    result = export_settings(_paths(), output)
+    click.echo(f"Settings exported: {result}")
+
+
+@config.command("import")
+@click.option("--input", "input_path", type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True, help="Input JSON path.")
+def config_import(input_path: Path):
+    """Import non-sensitive settings without overwriting local credentials."""
+    import_settings(_paths(), input_path)
+    click.echo("Settings imported.")
+
+
+@config.command("reset")
+def config_reset():
+    """Restore recommended defaults while keeping local account identity."""
+    reset_config(_paths())
+    click.echo("Settings reset to recommended defaults.")
 
 
 @main.group()
@@ -214,3 +241,13 @@ def legacy_gui():
     from .gui import main as legacy_gui_main
 
     legacy_gui_main()
+
+
+@main.command("cleanup")
+@click.option("--remove-data", is_flag=True, help="Also delete local config, cookies, grade snapshot, and logs.")
+def cleanup_command(remove_data: bool):
+    """Remove leftover startup entries after deleting the portable folder."""
+    result = cleanup_residue(remove_data=remove_data)
+    click.echo(cleanup_summary(result))
+    if remove_data:
+        click.echo("提示：Windows 凭据管理器中的密码和通知密钥需要按需手动删除。")

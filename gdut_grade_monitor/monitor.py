@@ -35,9 +35,15 @@ class GradeMonitor:
         changes, snapshot = diff_grades(previous_snapshot=previous, current_grades=current)
         checked_at = datetime.now().isoformat(timespec="seconds")
 
+        delivery_by_change: list[list[dict]] = []
         for change in changes:
-            title, body = format_change_message(change)
-            self.notifier.send(title, body)
+            send_change = getattr(type(self.notifier), "send_change", None)
+            if callable(send_change):
+                result = send_change(self.notifier, change)
+            else:
+                title, body = format_change_message(change)
+                result = self.notifier.send(title, body)
+            delivery_by_change.append(_delivery_results(result))
 
         state["grades"] = snapshot
         state["last_check_status"] = "ok"
@@ -50,7 +56,10 @@ class GradeMonitor:
         }
         if changes:
             history = state.get("history", [])
-            history_entries = [_history_entry(change, checked_at) for change in changes]
+            history_entries = [
+                _history_entry(change, checked_at, delivery_by_change[index])
+                for index, change in enumerate(changes)
+            ]
             state["history"] = (history_entries + history)[:100]
         save_state(self.paths, state)
         return changes
@@ -84,7 +93,7 @@ class GradeMonitor:
         save_state(self.paths, state)
 
 
-def _history_entry(change: dict, checked_at: str) -> dict:
+def _history_entry(change: dict, checked_at: str, delivery: list[dict] | None = None) -> dict:
     grade = change["grade"]
     entry = {
         "at": checked_at,
@@ -95,7 +104,29 @@ def _history_entry(change: dict, checked_at: str) -> dict:
     }
     if "old_score" in change:
         entry["old_score"] = change["old_score"]
+    if delivery:
+        entry["delivery"] = delivery
     return entry
+
+
+def _delivery_results(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    rows = []
+    for item in value:
+        if isinstance(item, dict):
+            channel_id = str(item.get("channel_id", ""))
+            label = str(item.get("label", channel_id))
+            ok = bool(item.get("ok", False))
+            detail = str(item.get("detail", ""))
+        else:
+            channel_id = str(getattr(item, "channel_id", ""))
+            label = str(getattr(item, "label", channel_id))
+            ok = bool(getattr(item, "ok", False))
+            detail = str(getattr(item, "detail", ""))
+        if channel_id:
+            rows.append({"channel_id": channel_id, "label": label, "ok": ok, "detail": detail})
+    return rows
 
 
 def monitor_pause_remaining_seconds(config: dict, now_iso: str | None = None) -> int:

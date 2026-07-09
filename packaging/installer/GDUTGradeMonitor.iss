@@ -1,6 +1,6 @@
 #define SourceRoot "..\.."
 #define AppExeName "GDUTGradeMonitor.exe"
-#define AppVersion "0.2.8"
+#define AppVersion "0.3.0"
 
 [Setup]
 AppId={{9D32DEAF-2BA9-4F75-8B4F-6FB6998B8D20}
@@ -48,6 +48,9 @@ Name: "{autodesktop}\GDUT 成绩提醒"; Filename: "{app}\{#AppExeName}"; Workin
 Filename: "{app}\{#AppExeName}"; Description: "启动 GDUT 成绩提醒"; Flags: nowait postinstall skipifsilent
 
 [Code]
+var
+  RemoveLocalDataOnUninstall: Boolean;
+
 function ContainsInvalidPathChars(Value: String): Boolean;
 var
   I: Integer;
@@ -62,6 +65,29 @@ begin
       Result := True;
       Exit;
     end;
+  end;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  RemoveLocalDataOnUninstall :=
+    MsgBox(
+      '是否同时删除本地配置、Cookie、成绩快照和日志？' + #13#10 + #13#10 +
+      '选择“是”会删除：' + ExpandConstant('{userprofile}\.gdut-grade-monitor') + #13#10 +
+      '选择“否”只卸载程序，保留本地数据，之后重装可以继续使用。' + #13#10 + #13#10 +
+      '注意：Windows 凭据管理器中的教务密码和通知密钥不会由卸载器删除。',
+      mbConfirmation,
+      MB_YESNO
+    ) = IDYES;
+  Result := True;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if (CurUninstallStep = usPostUninstall) and RemoveLocalDataOnUninstall then
+  begin
+    DeleteFile(ExpandConstant('{userstartup}\GDUT Grade Monitor.vbs'));
+    DelTree(ExpandConstant('{userprofile}\.gdut-grade-monitor'), True, True, True);
   end;
 end;
 

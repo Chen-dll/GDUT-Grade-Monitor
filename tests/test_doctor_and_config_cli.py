@@ -46,6 +46,18 @@ class DoctorTests(unittest.TestCase):
             self.assertIn("Data directory", names)
             self.assertIn("Configuration", names)
 
+    def test_run_checks_warns_about_stale_portable_startup_residue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+
+            with patch("gdut_grade_monitor.doctor.startup_script_is_stale", return_value=True):
+                results = run_checks(paths=paths)
+
+            residue = next(result for result in results if result.name == "Startup residue")
+            self.assertFalse(residue.ok)
+            self.assertFalse(residue.required)
+            self.assertIn("清理残留", residue.message)
+
 
 class ConfigCliTests(unittest.TestCase):
     def test_config_show_outputs_non_sensitive_configuration(self):

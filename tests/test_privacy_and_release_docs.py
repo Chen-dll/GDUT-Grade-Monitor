@@ -21,6 +21,26 @@ class PrivacyAndReleaseDocsTests(unittest.TestCase):
         self.assertIn("检查更新", text)
         self.assertIn("SHA256SUMS.txt", text)
 
+    def test_readme_has_three_minute_quick_start_for_normal_users(self):
+        text = Path("README.md").read_text(encoding="utf-8")
+
+        self.assertIn("3 分钟快速使用", text)
+        self.assertIn("下载 `GDUTGradeMonitor-Setup.exe`", text)
+        self.assertIn("一键配置本机", text)
+        self.assertIn("默认每 30 分钟检查一次", text)
+        self.assertIn("第一次只建立本地基线，不会提醒", text)
+        self.assertIn("密码和通知密钥不会上传", text)
+
+    def test_release_checklist_covers_installer_portable_and_cleanup_acceptance(self):
+        text = Path("RELEASE_CHECKLIST.md").read_text(encoding="utf-8")
+
+        self.assertIn("安装版验收", text)
+        self.assertIn("便携版验收", text)
+        self.assertIn("中文路径", text)
+        self.assertIn("空格路径", text)
+        self.assertIn("启动项残留清理", text)
+        self.assertIn("不要上传含真实账号", text)
+
     def test_packaging_includes_privacy_doc_and_checksum_generation(self):
         installer = Path("packaging/installer/GDUTGradeMonitor.iss").read_text(encoding="utf-8")
         build_installer = Path("scripts/build_installer.ps1").read_text(encoding="utf-8")

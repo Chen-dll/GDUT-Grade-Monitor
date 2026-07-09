@@ -51,8 +51,21 @@ $unusedPaths = @(
   (Join-Path $pysideDir "Qt6VirtualKeyboard.dll"),
   (Join-Path $pysideDir "Qt6Svg.dll"),
   (Join-Path $pysideDir "Qt6OpenGL.dll"),
+  (Join-Path $pysideDir "opengl32sw.dll"),
   (Join-Path $pysideDir "QtNetwork.pyd"),
   (Join-Path $pysideDir "Qt6Network.dll"),
+  (Join-Path $pysideDir "plugins\platforms\qdirect2d.dll"),
+  (Join-Path $pysideDir "plugins\platforms\qminimal.dll"),
+  (Join-Path $pysideDir "plugins\platforms\qoffscreen.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qgif.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qicns.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qjpeg.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qpdf.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qsvg.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qtga.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qtiff.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qwbmp.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qwebp.dll"),
   (Join-Path $internalDir "cryptography"),
   (Join-Path $internalDir "cryptography-48.0.0.dist-info"),
   (Join-Path $internalDir "_cffi_backend.cp314-win_amd64.pyd"),
@@ -62,6 +75,16 @@ $unusedPaths = @(
 foreach ($path in $unusedPaths) {
   if (Test-Path -LiteralPath $path) {
     Remove-Item -LiteralPath $path -Recurse -Force
+  }
+}
+
+$requiredQtRuntimeFiles = @(
+  (Join-Path $pysideDir "plugins\platforms\qwindows.dll"),
+  (Join-Path $pysideDir "plugins\imageformats\qico.dll")
+)
+foreach ($path in $requiredQtRuntimeFiles) {
+  if (-not (Test-Path -LiteralPath $path)) {
+    throw "Required Qt runtime file missing after pruning: $path"
   }
 }
 
@@ -75,6 +98,10 @@ if (Test-Path -LiteralPath $translationsDir) {
 Copy-Item -LiteralPath "README.md" -Destination ".\dist\GDUTGradeMonitor\README.md" -Force
 Copy-Item -LiteralPath "PRIVACY.md" -Destination ".\dist\GDUTGradeMonitor\PRIVACY.md" -Force
 Copy-Item -LiteralPath "LICENSE" -Destination ".\dist\GDUTGradeMonitor\LICENSE" -Force
+Copy-Item -LiteralPath "scripts\cleanup_residue.ps1" -Destination ".\dist\GDUTGradeMonitor-Cleanup.ps1" -Force
+Copy-Item -LiteralPath "scripts\cleanup_residue.ps1" -Destination ".\dist\GDUTGradeMonitor\GDUTGradeMonitor-Cleanup.ps1" -Force
+Copy-Item -LiteralPath "scripts\cleanup_residue.cmd" -Destination ".\dist\GDUTGradeMonitor-Cleanup.cmd" -Force
+Copy-Item -LiteralPath "scripts\cleanup_residue.cmd" -Destination ".\dist\GDUTGradeMonitor\GDUTGradeMonitor-Cleanup.cmd" -Force
 
 $zipPath = ".\dist\GDUTGradeMonitor-portable.zip"
 if (Test-Path -LiteralPath $zipPath) {

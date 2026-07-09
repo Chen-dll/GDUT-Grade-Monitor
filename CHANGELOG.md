@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.0 - 2026-07-09
+
+### Added
+
+- Added optional multi-device notifications through PushPlus, Server Chan, ntfy, and SMTP email.
+- Added per-channel notification privacy levels: private, summary, and detailed.
+- Added a Qt "多设备通知" settings dialog with channel enable switches, privacy selectors, third-party configuration fields, and a test notification button.
+- Added keyring-backed notification secret storage so PushPlus tokens, Server Chan SendKeys, ntfy bearer tokens, and SMTP passwords are not written to config files.
+- Added notification setup self-checks, per-channel test results, and clearer Chinese failure guidance for token, SendKey, ntfy, SMTP, and network errors.
+- Added settings export/import for non-sensitive preferences so another computer can reuse polling and notification settings without copying credentials.
+- Added a reset-to-recommended-defaults action that keeps the saved account and local grade snapshot.
+- Added optional local data cleanup during installer uninstall.
+- Added a standalone cleanup tool for users who delete the portable folder before removing the startup entry.
+- Added startup residue detection plus a Qt "卸载辅助" dialog for cleaning stale portable startup entries from inside the app.
+
+### Changed
+
+- The monitor now supports change-aware notifiers so each channel can format the same grade change with its own privacy level.
+- Notification history now records per-channel delivery summaries for each grade change.
+- CLI, Qt GUI, legacy GUI, and setup flow now use the same notification builder.
+
+### Security
+
+- Remote notification channels default to private mode.
+- `config.json` secret filtering now recursively removes nested token, password, cookie, and secret fields.
+- Settings backup files exclude student id, passwords, cookies, grades, and notification secrets.
+
 ## 0.2.8 - 2026-07-08
 
 ### Added

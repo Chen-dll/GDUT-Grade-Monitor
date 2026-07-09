@@ -37,6 +37,16 @@ class InstallerPackagingTests(unittest.TestCase):
         self.assertIn("安装路径格式不正确", text)
         self.assertIn("ContainsInvalidPathChars", text)
 
+    def test_uninstaller_offers_optional_local_data_cleanup(self):
+        text = Path("packaging/installer/GDUTGradeMonitor.iss").read_text(encoding="utf-8")
+
+        self.assertIn("InitializeUninstall", text)
+        self.assertIn("CurUninstallStepChanged", text)
+        self.assertIn("是否同时删除本地配置、Cookie、成绩快照和日志", text)
+        self.assertIn(r"{userprofile}\.gdut-grade-monitor", text)
+        self.assertIn("DelTree", text)
+        self.assertIn("Windows 凭据管理器", text)
+
     def test_installer_uses_local_chinese_language_file(self):
         script = Path("packaging/installer/GDUTGradeMonitor.iss").read_text(encoding="utf-8")
         language = Path("packaging/installer/ChineseSimplified.isl").read_text(encoding="utf-8")
@@ -72,7 +82,7 @@ class InstallerPackagingTests(unittest.TestCase):
         self.assertIn("下一步建议", after)
         self.assertIn("不需要安装 Python", after)
         self.assertIn("环境检查", after)
-        self.assertIn("卸载程序只会删除安装目录和快捷方式", after)
+        self.assertIn("卸载程序会询问是否同时删除本地配置", after)
         self.assertIn("不会执行评价、保存、删除、更新", after)
 
     def test_installer_build_script_uses_inno_compiler_and_friendly_error(self):

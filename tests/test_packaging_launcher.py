@@ -37,6 +37,33 @@ class PackagingLauncherTests(unittest.TestCase):
         self.assertIn("一键配置本机", text)
         self.assertNotIn("python -m gdut_grade_monitor setup", text)
 
+    def test_build_script_publishes_standalone_cleanup_tool(self):
+        build = Path("scripts/build_exe.ps1").read_text(encoding="utf-8")
+        cleanup = Path("scripts/cleanup_residue.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("cleanup_residue.ps1", build)
+        self.assertIn("GDUTGradeMonitor-Cleanup.ps1", build)
+        self.assertIn("cleanup_residue.cmd", build)
+        self.assertIn("GDUTGradeMonitor-Cleanup.cmd", build)
+        self.assertIn("GDUTGradeMonitor-Cleanup.ps1", cleanup)
+        self.assertIn("GDUT Grade Monitor.vbs", cleanup)
+        self.assertIn("schtasks", cleanup)
+        self.assertIn("/Delete", cleanup)
+        self.assertIn("DryRun", cleanup)
+        self.assertIn(".gdut-grade-monitor", cleanup)
+        self.assertIn("Windows Credential Manager", cleanup)
+
+    def test_portable_release_smoke_script_checks_common_user_paths(self):
+        text = Path("scripts/test_portable_release.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("GDUTGradeMonitor-portable.zip", text)
+        self.assertIn("中文路径", text)
+        self.assertIn("Path With Spaces", text)
+        self.assertIn("Start-Process", text)
+        self.assertIn("GDUTGradeMonitor.exe", text)
+        self.assertIn("GDUTGradeMonitor-Cleanup.cmd", text)
+        self.assertIn("-SkipLaunch", text)
+
 
 if __name__ == "__main__":
     unittest.main()
