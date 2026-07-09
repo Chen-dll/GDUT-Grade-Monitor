@@ -20,7 +20,8 @@ try {
     Where-Object { $_.Name -like "GDUTGradeMonitor-patch-v*-to-v*.*" -and ($_.Extension -in @(".zip", ".json")) } |
     Sort-Object Name
 
-  $allTargets = @($targets) + @($optionalPatchAssets.FullName)
+  $optionalPatchTargets = @($optionalPatchAssets | ForEach-Object { $_.FullName })
+  $allTargets = @($targets) + $optionalPatchTargets
 
   $lines = foreach ($target in $allTargets) {
     $file = Get-Item -LiteralPath $target

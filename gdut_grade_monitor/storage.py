@@ -46,6 +46,8 @@ def default_config() -> dict[str, Any]:
         "log_level": "INFO",
         "student_id": "",
         "first_run_wizard_seen": False,
+        "close_action": "ask",
+        "last_seen_version": "",
         "notifications": {
             "windows": {"enabled": True, "privacy": "detailed"},
             "pushplus": {"enabled": False, "privacy": "private"},

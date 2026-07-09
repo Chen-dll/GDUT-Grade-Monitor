@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from .grades import diff_grades
@@ -33,6 +33,7 @@ class GradeMonitor:
         config = load_config(self.paths)
         state = load_state(self.paths)
         previous = state.get("grades")
+        self.logger.info("Grade check started")
         current = self.fetcher.fetch_grades()
         changes, snapshot = diff_grades(previous_snapshot=previous, current_grades=current)
         checked_at = now_iso()
@@ -77,6 +78,7 @@ class GradeMonitor:
             detail = "; ".join(filter(None, notification_errors))[:300]
             record_notification_failure(state, checked_at=checked_at, detail=detail)
         save_state(self.paths, state)
+        self.logger.info("Grade check completed: grades=%s changes=%s", len(current), len(changes))
         return changes
 
     def run_forever(self) -> None:
@@ -93,7 +95,7 @@ class GradeMonitor:
             except Exception as exc:
                 self.logger.exception("Grade check failed: %s", exc)
                 self._record_runtime_failure(exc)
-            time.sleep(interval_seconds)
+            _sleep_with_config_refresh(self.paths, initial_interval_seconds=interval_seconds)
 
     def _record_runtime_failure(self, exc: BaseException) -> None:
         state = load_state(self.paths)
@@ -151,6 +153,37 @@ def _delivery_results(value) -> list[dict]:
     return rows
 
 
+def _sleep_with_config_refresh(
+    paths: AppPaths,
+    *,
+    initial_interval_seconds: int,
+    sleeper=time.sleep,
+    monotonic=time.monotonic,
+    max_slice_seconds: int = 60,
+    started_at_wall_iso: str | None = None,
+) -> None:
+    started_at = monotonic()
+    started_at_wall = _parse_datetime(started_at_wall_iso) if started_at_wall_iso else datetime.now()
+    interval_seconds = max(1, int(initial_interval_seconds))
+    max_slice_seconds = max(1, int(max_slice_seconds))
+    _record_next_check_at(paths, started_at_wall, interval_seconds)
+    while True:
+        elapsed = monotonic() - started_at
+        if elapsed >= interval_seconds:
+            return
+
+        sleeper(min(max_slice_seconds, interval_seconds - elapsed))
+        elapsed = monotonic() - started_at
+        try:
+            config = load_config(paths)
+            interval_seconds = max(1, int(config.get("poll_interval_minutes", 30)) * 60)
+        except (TypeError, ValueError):
+            interval_seconds = max(1, initial_interval_seconds)
+        _record_next_check_at(paths, started_at_wall, interval_seconds)
+        if elapsed >= interval_seconds:
+            return
+
+
 def monitor_pause_remaining_seconds(config: dict, now_iso: str | None = None) -> int:
     paused_until = str(config.get("monitor_paused_until", "") or "").strip()
     if not paused_until:
@@ -161,3 +194,21 @@ def monitor_pause_remaining_seconds(config: dict, now_iso: str | None = None) ->
     except ValueError:
         return 0
     return max(0, int((until - now).total_seconds()))
+
+
+def _parse_datetime(value: str | None) -> datetime:
+    if value:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    return datetime.now()
+
+
+def _record_next_check_at(paths: AppPaths, started_at_wall: datetime, interval_seconds: int) -> None:
+    next_check_at = (started_at_wall + timedelta(seconds=interval_seconds)).isoformat(timespec="seconds")
+    state = load_state(paths)
+    monitor = state.get("monitor", {})
+    monitor["next_check_at"] = next_check_at
+    state["monitor"] = monitor
+    save_state(paths, state)

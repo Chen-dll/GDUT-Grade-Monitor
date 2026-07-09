@@ -145,7 +145,8 @@ def next_check_summary(state: dict) -> str:
     monitor = state.get("monitor", {})
     interval = monitor.get("poll_interval_minutes", 30)
     last_check = str(monitor.get("last_check_at", "尚未检查")).replace("T", " ")
-    return f"最近检查: {last_check}    查询频率: 每 {interval} 分钟"
+    next_value, _ = _next_check_value_and_detail(monitor, interval=interval)
+    return f"最近检查: {last_check}    下次检查: {next_value}"
 
 
 def status_center_rows(config: dict, state: dict, startup_installed: bool, now_iso: str | None = None) -> list[dict[str, str]]:
@@ -182,8 +183,7 @@ def status_center_rows(config: dict, state: dict, startup_installed: bool, now_i
         status_detail = "自动后台检查已暂停，手动立即检查仍可使用。"
         status_tone = "warning"
 
-    next_value = f"每 {interval} 分钟"
-    next_detail = "后台启动后按此频率只读检查。"
+    next_value, next_detail = _next_check_value_and_detail(monitor, interval=interval)
     if paused_until:
         next_value = f"暂停到 {paused_until}"
         next_detail = "到点后自动恢复按频率检查。"
@@ -225,6 +225,23 @@ def _pause_is_active(paused_until: str, now_iso: str | None = None) -> bool:
     except ValueError:
         return False
     return until > now
+
+
+def _next_check_value_and_detail(monitor: dict, *, interval: int | str) -> tuple[str, str]:
+    next_check_at = _display_time(monitor.get("next_check_at"))
+    if next_check_at:
+        return next_check_at, f"后台调度已记录；当前频率每 {interval} 分钟。"
+    return "等待后台计划", f"后台启动并完成一次检查后会记录精确时间；当前频率每 {interval} 分钟。"
+
+
+def _display_time(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return datetime.fromisoformat(text).isoformat(sep=" ", timespec="seconds")
+    except ValueError:
+        return text.replace("T", " ")
 
 
 def _number(value) -> float | None:

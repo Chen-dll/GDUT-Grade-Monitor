@@ -15,6 +15,8 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("from .qt_gui import main as gui_main", text)
         self.assertIn("from .gui import main as legacy_gui_main", text)
         self.assertIn("--legacy-gui", text)
+        gui_block = text.split('if "--monitor" in sys.argv:', 1)[1].split('if "--legacy-gui" in sys.argv:', 1)[0]
+        self.assertIn("_configure_logging(paths)", gui_block)
 
     def test_cli_exposes_qt_default_and_legacy_gui_command(self):
         text = Path("gdut_grade_monitor/cli.py").read_text(encoding="utf-8")
@@ -212,6 +214,47 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("现在已经可以后台提醒了", complete_block)
         self.assertIn("首次配置已完成", complete_block)
 
+    def test_qt_close_button_behavior_can_be_remembered_and_changed_in_settings(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        close_block = text.split("def closeEvent", 1)[1].split("def quit_application", 1)[0]
+        settings_block = text.split("def _settings_page", 1)[1].split("def _settings_action_card", 1)[0]
+
+        self.assertIn("close_action", text)
+        self.assertIn("每次询问", settings_block)
+        self.assertIn("关闭按钮最小化到托盘", settings_block)
+        self.assertIn("关闭按钮退出程序", settings_block)
+        self.assertIn("self.close_action_combo", settings_block)
+        self.assertIn("保存设置", settings_block)
+        self.assertIn("不再提示，记住我的选择", close_block)
+        self.assertIn("save_close_action_preference", close_block)
+        self.assertIn("_handle_close_action", close_block)
+
+    def test_qt_shows_update_success_message_after_version_changes(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        init_block = text.split("def __init__(self):", 1)[1].split("def _fit_to_current_screen", 1)[0]
+        update_block = text.split("def maybe_show_update_success", 1)[1].split(
+            "def maybe_show_first_run_wizard", 1
+        )[0]
+
+        self.assertIn("QTimer.singleShot(700, self.maybe_show_update_success)", init_block)
+        self.assertIn("last_seen_version", update_block)
+        self.assertIn("已更新到", update_block)
+        self.assertIn("APP_VERSION", update_block)
+        self.assertIn("关闭窗口行为可以记住你的选择", update_block)
+        self.assertIn("save_config(self.paths, config)", update_block)
+
+    def test_qt_runs_one_safe_check_after_opening_for_configured_users(self):
+        text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
+        init_block = text.split("def __init__(self):", 1)[1].split("def _fit_to_current_screen", 1)[0]
+        auto_check_block = text.split("def maybe_run_startup_check", 1)[1].split(
+            "def maybe_show_update_success", 1
+        )[0]
+
+        self.assertIn("QTimer.singleShot(1200, self.maybe_run_startup_check)", init_block)
+        self.assertIn("student_id", auto_check_block)
+        self.assertIn("self.check_now(silent=True)", auto_check_block)
+        self.assertIn("not config.get(\"student_id\")", auto_check_block)
+
     def test_qt_gui_mentions_repair_startup_wording(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")
         install_block = text.split("def install_startup", 1)[1].split("def uninstall_startup", 1)[0]
@@ -231,7 +274,8 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("打开数据目录", dashboard_block)
         self.assertNotIn("导出诊断包", dashboard_block)
         self.assertNotIn("安装自启动", dashboard_block)
-        self.assertIn("status_center_rows(config, state, installed)[:3]", text)
+        self.assertIn("status_rows = status_center_rows(config, state, installed)", text)
+        self.assertIn("_set_status_center(status_rows[:3])", text)
 
     def test_single_instance_lock_blocks_second_owner(self):
         from gdut_grade_monitor.qt_gui import _acquire_single_instance_lock

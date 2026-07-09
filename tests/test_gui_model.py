@@ -114,14 +114,36 @@ class GuiModelTests(unittest.TestCase):
         config = {"student_id": "3210000000", "poll_interval_minutes": 30, "monitor_paused_until": "2026-07-08T11:00:00"}
         state = {
             "last_check_status": "ok",
-            "monitor": {"last_check_at": "2026-07-08T12:00:00", "heartbeat_at": "2026-07-08T12:00:00"},
+            "monitor": {
+                "last_check_at": "2026-07-08T12:00:00",
+                "heartbeat_at": "2026-07-08T12:00:00",
+                "next_check_at": "2026-07-08T12:30:00",
+            },
         }
 
         rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-08T12:00:00")
         text = "\n".join(f"{row['label']} {row['value']} {row['detail']}" for row in rows)
 
         self.assertIn("后台状态 后台正常", text)
-        self.assertIn("下次检查 每 30 分钟", text)
+        self.assertIn("下次检查 2026-07-08 12:30:00", text)
+
+    def test_status_center_rows_prefers_recorded_next_check_over_frequency_math(self):
+        config = {"student_id": "3210000000", "poll_interval_minutes": 5}
+        state = {
+            "last_check_status": "ok",
+            "monitor": {
+                "last_check_at": "2026-07-08T12:00:00",
+                "heartbeat_at": "2026-07-08T12:00:00",
+                "next_check_at": "2026-07-08T12:07:00",
+            },
+        }
+
+        rows = status_center_rows(config=config, state=state, startup_installed=True, now_iso="2026-07-08T12:01:00")
+        text = "\n".join(f"{row['label']} {row['value']} {row['detail']}" for row in rows)
+
+        self.assertIn("下次检查 2026-07-08 12:07:00", text)
+        self.assertNotIn("下次检查 每 5 分钟", text)
+        self.assertNotIn("12:05:00", text)
 
     def test_status_center_rows_warns_after_three_failures(self):
         config = {"student_id": "3210000000", "poll_interval_minutes": 30}

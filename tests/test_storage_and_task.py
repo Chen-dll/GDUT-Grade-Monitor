@@ -67,6 +67,8 @@ class StorageAndTaskTests(unittest.TestCase):
 
             self.assertEqual(config["poll_interval_minutes"], 30)
             self.assertFalse(config["first_run_wizard_seen"])
+            self.assertEqual(config["close_action"], "ask")
+            self.assertEqual(config["last_seen_version"], "")
             self.assertIn("notifications", config)
 
     @patch("gdut_grade_monitor.credentials.keyring")

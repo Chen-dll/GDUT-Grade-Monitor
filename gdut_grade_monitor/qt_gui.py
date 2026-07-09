@@ -66,6 +66,7 @@ from .gui_model import about_text, doctor_table_rows, filter_grades, first_run_w
 from .gui_model import help_sections, history_table_rows
 from .gui_model import onboarding_steps, recent_change_rows, semester_options
 from .gui_model import setup_guidance, status_center_rows, status_summary
+from .log_view import write_log_view_file
 from .monitor import GradeMonitor
 from .notification_channels import (
     NotificationSecretStore,
@@ -88,6 +89,16 @@ from .update_check import GitHubRelease, PatchUpdate, check_latest_release
 class _Signals(QObject):
     success = Signal(object)
     error = Signal(str)
+
+
+CLOSE_ACTION_ASK = "ask"
+CLOSE_ACTION_MINIMIZE = "minimize"
+CLOSE_ACTION_EXIT = "exit"
+CLOSE_ACTION_LABELS = {
+    CLOSE_ACTION_ASK: "每次询问",
+    CLOSE_ACTION_MINIMIZE: "关闭按钮最小化到托盘",
+    CLOSE_ACTION_EXIT: "关闭按钮退出程序",
+}
 
 
 class FirstRunSetupDialog(QDialog):
@@ -1274,6 +1285,8 @@ class GradeMonitorQtApp(QMainWindow):
         self.refresh_all()
         self._fit_to_current_screen()
         QTimer.singleShot(350, self.maybe_show_first_run_wizard)
+        QTimer.singleShot(700, self.maybe_show_update_success)
+        QTimer.singleShot(1200, self.maybe_run_startup_check)
 
     def _fit_to_current_screen(self) -> None:
         screen = QApplication.primaryScreen()
@@ -1406,7 +1419,7 @@ class GradeMonitorQtApp(QMainWindow):
         status_layout.addLayout(main_status, 1)
         next_box = QFrame()
         next_box.setObjectName("nextBox")
-        next_box.setFixedWidth(186)
+        next_box.setFixedWidth(224)
         next_layout = QVBoxLayout(next_box)
         next_layout.setContentsMargins(16, 14, 16, 14)
         next_layout.setSpacing(4)
@@ -1688,15 +1701,23 @@ class GradeMonitorQtApp(QMainWindow):
         self.interval = QSpinBox()
         self.interval.setRange(1, 1440)
         self.interval.setValue(int(config.get("poll_interval_minutes", 30)))
+        self.close_action_combo = QComboBox()
+        self.close_action_combo.addItem("每次询问", CLOSE_ACTION_ASK)
+        self.close_action_combo.addItem("关闭按钮最小化到托盘", CLOSE_ACTION_MINIMIZE)
+        self.close_action_combo.addItem("关闭按钮退出程序", CLOSE_ACTION_EXIT)
+        close_action = str(config.get("close_action") or CLOSE_ACTION_ASK)
+        index = self.close_action_combo.findData(close_action if close_action in CLOSE_ACTION_LABELS else CLOSE_ACTION_ASK)
+        self.close_action_combo.setCurrentIndex(max(0, index))
         intro = QLabel("调整后台检查频率、重新登录，或者管理 Windows 登录后的后台提醒。")
         intro.setObjectName("muted")
         form_card = _card()
         form = QFormLayout(form_card)
         form.setContentsMargins(18, 16, 18, 16)
         form.addRow("查询频率(分钟)", self.interval)
-        save = QPushButton("保存频率")
+        form.addRow("关闭窗口时", self.close_action_combo)
+        save = QPushButton("保存设置")
         save.setObjectName("primaryButton")
-        save.clicked.connect(self.save_interval)
+        save.clicked.connect(self.save_settings)
         login = QPushButton("重新登录/初始化")
         login.setObjectName("secondaryButton")
         login.clicked.connect(self.setup_login)
@@ -1945,11 +1966,18 @@ class GradeMonitorQtApp(QMainWindow):
             return
 
         if self.tray:
+            close_action = str(load_config(self.paths).get("close_action") or CLOSE_ACTION_ASK)
+            if close_action in (CLOSE_ACTION_MINIMIZE, CLOSE_ACTION_EXIT):
+                self._handle_close_action(close_action, event)
+                return
+
             box = QMessageBox(self)
             box.setWindowTitle("关闭 GDUT 成绩提醒")
             box.setIcon(QMessageBox.Question)
             box.setText("你想把程序最小化到托盘，还是直接退出？")
             box.setInformativeText("最小化到托盘后，后台提醒会继续运行；直接退出会停止当前进程。")
+            remember = QCheckBox("不再提示，记住我的选择")
+            box.setCheckBox(remember)
             minimize_button = box.addButton("最小化到托盘", QMessageBox.AcceptRole)
             quit_button = box.addButton("退出程序", QMessageBox.DestructiveRole)
             cancel_button = box.addButton("取消", QMessageBox.RejectRole)
@@ -1957,13 +1985,14 @@ class GradeMonitorQtApp(QMainWindow):
             box.exec()
             clicked = box.clickedButton()
             if clicked is minimize_button:
-                event.ignore()
-                self.hide()
-                self.tray.showMessage("GDUT 成绩提醒", "已最小化到托盘，后台提醒仍会继续。", QSystemTrayIcon.Information, 3000)
+                if remember.isChecked():
+                    self.save_close_action_preference(CLOSE_ACTION_MINIMIZE)
+                self._handle_close_action(CLOSE_ACTION_MINIMIZE, event)
                 return
             if clicked is quit_button:
-                self._force_quit = True
-                event.accept()
+                if remember.isChecked():
+                    self.save_close_action_preference(CLOSE_ACTION_EXIT)
+                self._handle_close_action(CLOSE_ACTION_EXIT, event)
                 return
             event.ignore()
             return
@@ -1980,6 +2009,16 @@ class GradeMonitorQtApp(QMainWindow):
             event.accept()
         else:
             event.ignore()
+
+    def _handle_close_action(self, action: str, event: QCloseEvent) -> None:
+        if action == CLOSE_ACTION_EXIT:
+            self._force_quit = True
+            event.accept()
+            return
+        event.ignore()
+        self.hide()
+        if self.tray:
+            self.tray.showMessage("GDUT 成绩提醒", "已最小化到托盘，后台提醒仍会继续。", QSystemTrayIcon.Information, 3000)
 
     def quit_application(self) -> None:
         self._force_quit = True
@@ -2012,10 +2051,12 @@ class GradeMonitorQtApp(QMainWindow):
         self.guidance_title.setText(guidance["title"])
         self.guidance_body.setText(guidance["body"])
         self._last_guidance_action = guidance["primary_action"]
-        self.next_check_label.setText(f"每 {config.get('poll_interval_minutes', 30)} 分钟")
+        status_rows = status_center_rows(config, state, installed)
+        self.next_check_label.setText(status_rows[2]["value"])
+        self.next_check_label.setToolTip(status_rows[2]["detail"])
         self._set_recent_changes(recent_change_rows(state, limit=20))
         self._set_summary_cards(state, config, installed)
-        self._set_status_center(status_center_rows(config, state, installed)[:3])
+        self._set_status_center(status_rows[:3])
 
     def _set_recent_changes(self, recent: list[tuple[str, str, str]]) -> None:
         while self.recent_list.count():
@@ -2231,6 +2272,24 @@ class GradeMonitorQtApp(QMainWindow):
         else:
             self.one_click_setup()
 
+    def maybe_show_update_success(self) -> None:
+        config = load_config(self.paths)
+        last_seen_version = str(config.get("last_seen_version") or "")
+        if last_seen_version == APP_VERSION:
+            return
+
+        config["last_seen_version"] = APP_VERSION
+        save_config(self.paths, config)
+        if not last_seen_version:
+            return
+
+        QMessageBox.information(
+            self,
+            f"已更新到 v{APP_VERSION}",
+            "关闭窗口行为可以记住你的选择；以后也可以在设置页随时修改。\n\n"
+            "本地配置、密码、Cookie、成绩快照和通知密钥都不会被更新覆盖。",
+        )
+
     def maybe_show_first_run_wizard(self) -> None:
         config = load_config(self.paths)
         state = load_state(self.paths)
@@ -2326,7 +2385,18 @@ class GradeMonitorQtApp(QMainWindow):
         self._close_setup_progress()
         QMessageBox.critical(self, "一键配置本机", message)
 
-    def check_now(self) -> None:
+    def maybe_run_startup_check(self) -> None:
+        config = load_config(self.paths)
+        if not config.get("student_id"):
+            return
+        if self._busy_progress is not None or self._setup_progress is not None:
+            return
+        self.check_now(silent=True)
+
+    def check_now(self, silent: bool = False) -> None:
+        if silent:
+            self._run_background(self._check_now_worker, self._check_complete_silent, lambda _message: self.refresh_status())
+            return
         self._run_background_with_progress(
             "立即检查",
             "正在只读连接教务系统并检查成绩...\n如果弹出登录页面，请按学校页面完成验证。",
@@ -2350,6 +2420,11 @@ class GradeMonitorQtApp(QMainWindow):
         self.refresh_all()
         QMessageBox.information(self, "立即检查", f"检查完成，发现 {len(changes)} 项变化。")
 
+    def _check_complete_silent(self, payload: tuple[list[dict], list[dict]]) -> None:
+        grades, _changes = payload
+        self._fill_table(self.grades_table, grade_table_rows(grades))
+        self.refresh_all()
+
     def setup_login(self) -> None:
         dialog = FirstRunSetupDialog(self, self.interval.value())
         dialog.autostart.setChecked(False)
@@ -2360,11 +2435,29 @@ class GradeMonitorQtApp(QMainWindow):
         self._show_setup_progress()
         self._run_background(lambda: self._one_click_setup_worker(options), self._one_click_setup_complete, self._one_click_setup_failed)
 
-    def save_interval(self) -> None:
+    def save_settings(self) -> None:
         config = set_poll_interval(self.paths, self.interval.value())
+        self.save_close_action_preference(str(self.close_action_combo.currentData()), show_message=False)
+        config = load_config(self.paths)
         self.interval.setValue(int(config["poll_interval_minutes"]))
         self.refresh_status()
-        QMessageBox.information(self, "设置", f"查询频率已设置为每 {config['poll_interval_minutes']} 分钟。")
+        action_label = CLOSE_ACTION_LABELS.get(str(config.get("close_action")), CLOSE_ACTION_LABELS[CLOSE_ACTION_ASK])
+        QMessageBox.information(
+            self,
+            "设置",
+            f"查询频率已设置为每 {config['poll_interval_minutes']} 分钟。\n关闭窗口时：{action_label}。",
+        )
+
+    def save_interval(self) -> None:
+        self.save_settings()
+
+    def save_close_action_preference(self, action: str, *, show_message: bool = False) -> None:
+        config = load_config(self.paths)
+        config["close_action"] = action if action in CLOSE_ACTION_LABELS else CLOSE_ACTION_ASK
+        save_config(self.paths, config)
+        if show_message:
+            action_label = CLOSE_ACTION_LABELS[config["close_action"]]
+            QMessageBox.information(self, "关闭窗口", f"已记住：{action_label}。")
 
     def open_notification_settings(self) -> None:
         dialog = NotificationSettingsDialog(self, self.paths)
@@ -2447,8 +2540,9 @@ class GradeMonitorQtApp(QMainWindow):
 
     def open_log_file(self) -> None:
         self.paths.ensure()
-        if self.paths.log_file.exists():
-            os.startfile(self.paths.log_file)
+        view_file = write_log_view_file(self.paths)
+        if view_file is not None:
+            os.startfile(view_file)
             return
         os.startfile(self.paths.log_dir)
         QMessageBox.information(self, "查看日志", "暂时还没有日志文件，已打开日志目录。")
@@ -2888,7 +2982,7 @@ class GradeMonitorQtApp(QMainWindow):
             #statusBody { color: #cbd5e1; }
             QFrame#nextBox { background: #1f2937; border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 14px; }
             #nextLabel { color: #94a3b8; font-size: 12px; }
-            #nextValue { color: white; font-size: 24px; font-weight: 900; }
+            #nextValue { color: white; font-size: 18px; font-weight: 900; }
             QFrame#metricTile { background: transparent; }
             QFrame#chart { background: #ffffff; border: 0; }
             QPushButton { padding: 9px 14px; border-radius: 9px; background: #2563eb; color: white; border: 0; }

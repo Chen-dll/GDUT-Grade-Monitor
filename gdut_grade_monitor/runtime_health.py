@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 from requests import ConnectionError, Timeout
@@ -63,6 +63,7 @@ def record_monitor_success(state: dict, *, checked_at: str, poll_interval_minute
     monitor["heartbeat_at"] = checked_at
     monitor["last_success_at"] = checked_at
     monitor["poll_interval_minutes"] = poll_interval_minutes
+    monitor["next_check_at"] = next_check_time(checked_at, poll_interval_minutes)
     monitor["consecutive_failures"] = 0
     for key in ("last_error_kind", "last_error_summary", "last_error_action"):
         monitor.pop(key, None)
@@ -83,6 +84,7 @@ def record_monitor_failure(
     monitor["last_check_at"] = checked_at
     monitor["last_failure_at"] = checked_at
     monitor["poll_interval_minutes"] = poll_interval_minutes
+    monitor["next_check_at"] = next_check_time(checked_at, poll_interval_minutes)
     monitor["consecutive_failures"] = int(monitor.get("consecutive_failures", 0) or 0) + 1
     monitor["last_error_kind"] = issue.kind
     monitor["last_error_summary"] = issue.summary
@@ -117,3 +119,11 @@ def record_notification_failure(state: dict, *, checked_at: str, detail: str) ->
 
 def autostart_issue() -> RuntimeIssue:
     return RuntimeIssue("autostart_broken", "自启动路径失效", "请在设置页点击安装/修复自启动。")
+
+
+def next_check_time(checked_at: str, poll_interval_minutes: int) -> str:
+    try:
+        base = datetime.fromisoformat(checked_at)
+    except ValueError:
+        base = datetime.now()
+    return (base + timedelta(minutes=max(1, int(poll_interval_minutes)))).isoformat(timespec="seconds")

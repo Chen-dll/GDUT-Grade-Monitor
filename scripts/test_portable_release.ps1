@@ -12,10 +12,26 @@ function Assert-Exists($Path, $Message) {
   }
 }
 
+function Remove-SmokeDirectory($Path) {
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return
+  }
+
+  $resolved = (Resolve-Path -LiteralPath $Path).Path
+  $tempRoot = [System.IO.Path]::GetTempPath()
+  if (-not $resolved.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to delete smoke test directory outside temp: $resolved"
+  }
+
+  [System.GC]::Collect()
+  [System.GC]::WaitForPendingFinalizers()
+  [System.IO.Directory]::Delete($resolved, $true)
+}
+
 function Test-PortableCase($CaseName, $Destination, $ZipPath, $SkipLaunch) {
   Write-Host "Testing portable case: $CaseName" -ForegroundColor Cyan
   if (Test-Path -LiteralPath $Destination) {
-    Remove-Item -LiteralPath $Destination -Recurse -Force
+    Remove-SmokeDirectory $Destination
   }
   New-Item -ItemType Directory -Path $Destination -Force | Out-Null
   Expand-Archive -LiteralPath $ZipPath -DestinationPath $Destination -Force
@@ -57,6 +73,6 @@ try {
 }
 finally {
   if (Test-Path -LiteralPath $root) {
-    Remove-Item -LiteralPath $root -Recurse -Force
+    Remove-SmokeDirectory $root
   }
 }

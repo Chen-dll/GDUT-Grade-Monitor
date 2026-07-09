@@ -1,11 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from gdut_grade_monitor.grades import normalize_grade
 from gdut_grade_monitor.gui_model import history_table_rows, next_check_summary
-from gdut_grade_monitor.monitor import GradeMonitor, monitor_pause_remaining_seconds
+from gdut_grade_monitor.monitor import GradeMonitor, _sleep_with_config_refresh, monitor_pause_remaining_seconds
 from gdut_grade_monitor.storage import AppPaths, load_config, load_state, save_config, save_state, set_poll_interval
 
 
@@ -20,6 +20,19 @@ class FakeFetcher:
 class FailingFetcher:
     def fetch_grades(self):
         raise RuntimeError("boom")
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now += seconds
 
 
 class VersionEnhancementTests(unittest.TestCase):
@@ -49,12 +62,79 @@ class VersionEnhancementTests(unittest.TestCase):
                 notifier=Mock(),
             )
 
-            monitor.run_once()
+            with patch("gdut_grade_monitor.monitor.now_iso", return_value="2026-07-08T12:00:00"):
+                monitor.run_once()
             state = load_state(paths)
 
             self.assertEqual(state["monitor"]["poll_interval_minutes"], 7)
-            self.assertIn("last_check_at", state["monitor"])
+            self.assertEqual(state["monitor"]["last_check_at"], "2026-07-08T12:00:00")
             self.assertIn("heartbeat_at", state["monitor"])
+            self.assertEqual(state["monitor"]["next_check_at"], "2026-07-08T12:07:00")
+
+    def test_monitor_logs_every_successful_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            monitor = GradeMonitor(
+                paths=paths,
+                fetcher=FakeFetcher([{"xnxqdm": "202502", "kcbh": "CS101", "kcmc": "数据结构", "zcj": "95"}]),
+                notifier=Mock(),
+            )
+
+            with self.assertLogs("gdut_grade_monitor", level="INFO") as logs:
+                monitor.run_once()
+
+            log_text = "\n".join(logs.output)
+            self.assertIn("Grade check started", log_text)
+            self.assertIn("Grade check completed", log_text)
+            self.assertIn("grades=1", log_text)
+            self.assertIn("changes=0", log_text)
+
+    def test_monitor_sleep_reacts_when_poll_interval_is_shortened(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            config = load_config(paths)
+            config["poll_interval_minutes"] = 30
+            save_config(paths, config)
+            clock = FakeClock()
+
+            def sleeper(seconds):
+                clock.sleep(seconds)
+                if len(clock.sleeps) == 1:
+                    updated = load_config(paths)
+                    updated["poll_interval_minutes"] = 5
+                    save_config(paths, updated)
+
+            _sleep_with_config_refresh(
+                paths,
+                initial_interval_seconds=30 * 60,
+                sleeper=sleeper,
+                monotonic=clock.monotonic,
+                max_slice_seconds=60,
+            )
+
+            self.assertEqual(clock.now, 5 * 60)
+            self.assertTrue(clock.sleeps)
+            self.assertLessEqual(max(clock.sleeps), 60)
+
+    def test_monitor_sleep_records_next_check_time_from_runtime_schedule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            config = load_config(paths)
+            config["poll_interval_minutes"] = 5
+            save_config(paths, config)
+            clock = FakeClock()
+
+            _sleep_with_config_refresh(
+                paths,
+                initial_interval_seconds=5 * 60,
+                sleeper=clock.sleep,
+                monotonic=clock.monotonic,
+                max_slice_seconds=60,
+                started_at_wall_iso="2026-07-08T12:00:00",
+            )
+
+            state = load_state(paths)
+            self.assertEqual(state["monitor"]["next_check_at"], "2026-07-08T12:05:00")
 
     def test_monitor_records_notification_history_for_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -135,14 +215,18 @@ class VersionEnhancementTests(unittest.TestCase):
 
     def test_gui_model_formats_next_check_and_history_rows(self):
         state = {
-            "monitor": {"poll_interval_minutes": 30, "last_check_at": "2026-07-08T10:00:00"},
+            "monitor": {
+                "poll_interval_minutes": 30,
+                "last_check_at": "2026-07-08T10:00:00",
+                "next_check_at": "2026-07-08T10:37:00",
+            },
             "history": [
                 {"kind": "new", "semester": "202502", "course_name": "数据结构", "score": "95", "at": "2026-07-08T10:00:00"}
             ],
         }
 
-        self.assertIn("30 分钟", next_check_summary(state))
         self.assertIn("2026-07-08 10:00:00", next_check_summary(state))
+        self.assertIn("2026-07-08 10:37:00", next_check_summary(state))
         self.assertEqual(
             history_table_rows(state),
             [("2026-07-08 10:00:00", "新成绩", "202502", "数据结构", "95")],

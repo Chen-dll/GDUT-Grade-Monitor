@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.4 - 2026-07-09
+
+### Added
+
+- Added a close-button preference: ask every time, minimize to tray by default, or exit by default.
+- Added a "remember my choice" checkbox to the close confirmation dialog.
+- Added a friendly update-success message after the app version changes, while skipping the message on first install.
+- Added a sanitized user-facing log view that summarizes grade checks and hides optional keyring backend noise.
+
+### Changed
+
+- The Settings page now saves both the check interval and close-button behavior together.
+- The update-success message explicitly confirms that local config, credentials, cookies, grade snapshots, and notification secrets are not overwritten.
+- The background monitor now wakes periodically while waiting for the next check, so a shortened polling interval takes effect without waiting for the old longer interval to finish.
+- Manual checks now refresh the recorded next-check time from the actual completion time.
+- The dashboard now prefers the monitor's recorded next scheduled check instead of estimating only from the configured interval.
+- Successful checks now write concise user-readable log entries with the check time, course count, and whether changes were found.
+
+### Fixed
+
+- Fixed mojibake when opening logs from the GUI by writing UTF-8 logs and generating a sanitized UTF-8 log view.
+- Avoided startup auto-check login errors for users who have not configured an account yet.
+- Made the portable release smoke test clean large temporary extraction directories reliably.
+
 ## 0.3.3 - 2026-07-09
 
 ### Changed

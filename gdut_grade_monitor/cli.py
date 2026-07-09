@@ -28,11 +28,14 @@ def _paths() -> AppPaths:
 
 
 def _configure_logging(paths: AppPaths) -> None:
+    paths.ensure()
     config = load_config(paths)
+    logging.getLogger("keyring.backend").setLevel(logging.CRITICAL)
     logging.basicConfig(
         filename=str(paths.log_file),
         level=getattr(logging, str(config.get("log_level", "INFO")).upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        encoding="utf-8",
     )
 
 
