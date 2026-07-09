@@ -14,3 +14,4 @@ venv/
 *.log
 .omx/
 .superpowers/
+.worktrees/
