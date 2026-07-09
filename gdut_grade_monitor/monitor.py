@@ -7,6 +7,7 @@ from typing import Protocol
 
 from .grades import diff_grades
 from .notify import format_change_message
+from .runtime_health import now_iso, record_monitor_failure, record_monitor_success, record_notification_failure
 from .storage import AppPaths, load_config, load_state, save_state
 
 
@@ -33,27 +34,37 @@ class GradeMonitor:
         previous = state.get("grades")
         current = self.fetcher.fetch_grades()
         changes, snapshot = diff_grades(previous_snapshot=previous, current_grades=current)
-        checked_at = datetime.now().isoformat(timespec="seconds")
+        checked_at = now_iso()
+        poll_interval = int(config.get("poll_interval_minutes", 30))
 
         delivery_by_change: list[list[dict]] = []
+        notification_errors: list[str] = []
         for change in changes:
-            send_change = getattr(type(self.notifier), "send_change", None)
-            if callable(send_change):
-                result = send_change(self.notifier, change)
-            else:
-                title, body = format_change_message(change)
-                result = self.notifier.send(title, body)
-            delivery_by_change.append(_delivery_results(result))
+            try:
+                send_change = getattr(type(self.notifier), "send_change", None)
+                if callable(send_change):
+                    result = send_change(self.notifier, change)
+                else:
+                    title, body = format_change_message(change)
+                    result = self.notifier.send(title, body)
+                delivery = _delivery_results(result)
+                notification_errors.extend(
+                    row.get("detail", "")
+                    for row in delivery
+                    if not row.get("ok", False)
+                )
+                delivery_by_change.append(delivery)
+            except Exception as exc:
+                detail = str(exc)
+                self.logger.warning("Notification failed: %s", exc)
+                notification_errors.append(detail)
+                delivery_by_change.append(
+                    [{"channel_id": "unknown", "label": "通知渠道", "ok": False, "detail": detail}]
+                )
 
         state["grades"] = snapshot
-        state["last_check_status"] = "ok"
+        record_monitor_success(state, checked_at=checked_at, poll_interval_minutes=poll_interval)
         state["last_change_count"] = len(changes)
-        state.pop("last_error", None)
-        state["monitor"] = {
-            "last_check_at": checked_at,
-            "heartbeat_at": checked_at,
-            "poll_interval_minutes": int(config.get("poll_interval_minutes", 30)),
-        }
         if changes:
             history = state.get("history", [])
             history_entries = [
@@ -61,6 +72,9 @@ class GradeMonitor:
                 for index, change in enumerate(changes)
             ]
             state["history"] = (history_entries + history)[:100]
+        if notification_errors:
+            detail = "; ".join(filter(None, notification_errors))[:300]
+            record_notification_failure(state, checked_at=checked_at, detail=detail)
         save_state(self.paths, state)
         return changes
 
@@ -77,8 +91,15 @@ class GradeMonitor:
                 self.run_once()
             except Exception as exc:
                 self.logger.exception("Grade check failed: %s", exc)
-                self._record_runtime_status("error", str(exc))
+                self._record_runtime_failure(exc)
             time.sleep(interval_seconds)
+
+    def _record_runtime_failure(self, exc: BaseException) -> None:
+        state = load_state(self.paths)
+        checked_at = now_iso()
+        poll_interval = int(load_config(self.paths).get("poll_interval_minutes", 30))
+        record_monitor_failure(state, exc, checked_at=checked_at, poll_interval_minutes=poll_interval)
+        save_state(self.paths, state)
 
     def _record_runtime_status(self, status: str, error: str = "") -> None:
         state = load_state(self.paths)

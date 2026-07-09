@@ -17,6 +17,11 @@ class FakeFetcher:
         return [normalize_grade(row) for row in self.rows]
 
 
+class FailingFetcher:
+    def fetch_grades(self):
+        raise RuntimeError("boom")
+
+
 class VersionEnhancementTests(unittest.TestCase):
     def test_set_poll_interval_clamps_and_persists_minutes(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -94,6 +99,32 @@ class VersionEnhancementTests(unittest.TestCase):
             monitor.run_once()
 
             self.assertNotIn("last_error", load_state(paths))
+
+    def test_monitor_records_structured_failure_and_resets_after_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            monitor = GradeMonitor(paths=paths, fetcher=FailingFetcher(), notifier=Mock())
+
+            monitor._record_runtime_failure(RuntimeError("boom"))
+            monitor._record_runtime_failure(RuntimeError("boom again"))
+            failed_state = load_state(paths)
+
+            self.assertEqual(failed_state["monitor"]["consecutive_failures"], 2)
+            self.assertEqual(failed_state["monitor"]["last_error_kind"], "unknown")
+            self.assertIn("last_failure_at", failed_state["monitor"])
+            self.assertEqual(failed_state["last_check_status"], "error")
+
+            recovery = GradeMonitor(
+                paths=paths,
+                fetcher=FakeFetcher([{"xnxqdm": "202502", "kcbh": "CS101", "kcmc": "数据结构", "zcj": "95"}]),
+                notifier=Mock(),
+            )
+            recovery.run_once()
+            recovered_state = load_state(paths)
+
+            self.assertEqual(recovered_state["monitor"]["consecutive_failures"], 0)
+            self.assertIn("last_success_at", recovered_state["monitor"])
+            self.assertNotIn("last_error", recovered_state)
 
     def test_monitor_pause_remaining_seconds_handles_future_expired_and_invalid_values(self):
         now = "2026-07-08T12:00:00"

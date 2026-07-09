@@ -40,6 +40,12 @@ class ResultReturningNotifier(ChangeAwareNotifier):
         ]
 
 
+class RaisingNotifier(ChangeAwareNotifier):
+    def send_change(self, change):
+        super().send_change(change)
+        raise RuntimeError("pushplus failed")
+
+
 class MonitorAndNotifyTests(unittest.TestCase):
     def test_monitor_baselines_first_run_and_notifies_new_grade_later(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -184,6 +190,31 @@ class MonitorAndNotifyTests(unittest.TestCase):
                     {"channel_id": "pushplus", "label": "PushPlus 微信通知", "ok": False, "detail": "token 无效"},
                 ],
             )
+
+    def test_notification_exception_does_not_rollback_grade_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            baseline = GradeMonitor(
+                paths=paths,
+                fetcher=FakeFetcher([{"xnxqdm": "202502", "kcbh": "MATH", "kcmc": "高数", "zcj": "88"}]),
+                notifier=Mock(),
+            )
+            baseline.run_once()
+
+            changed = GradeMonitor(
+                paths=paths,
+                fetcher=FakeFetcher([{"xnxqdm": "202502", "kcbh": "MATH", "kcmc": "高数", "zcj": "89"}]),
+                notifier=RaisingNotifier(),
+            )
+
+            changes = changed.run_once()
+            state = load_state(paths)
+
+            self.assertEqual(len(changes), 1)
+            self.assertEqual(state["grades"]["202502|MATH|高数"]["score"], "89")
+            self.assertEqual(state["last_check_status"], "notification_failed")
+            self.assertEqual(state["monitor"]["last_error_kind"], "notification_failed")
+            self.assertIn("last_notification_failure_at", state["monitor"])
 
 
 if __name__ == "__main__":

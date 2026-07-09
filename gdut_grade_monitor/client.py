@@ -13,6 +13,9 @@ class GradeResponseError(RuntimeError):
     def __init__(self, response):
         text = getattr(response, "text", "") or ""
         preview = " ".join(text.strip().split())[:300]
+        self.status_code = getattr(response, "status_code", None)
+        self.url = getattr(response, "url", "")
+        self.snippet = preview
         super().__init__(f"成绩接口没有返回 JSON，可能登录态或访问上下文失效。响应摘要: {preview}")
 
 
