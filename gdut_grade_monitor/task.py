@@ -60,9 +60,9 @@ def _decode_process_output(value: str | bytes | None) -> str:
     if isinstance(value, str):
         return value
     candidates = [
+        "gbk",
         locale.getpreferredencoding(False),
         sys.getfilesystemencoding(),
-        "gbk",
         "mbcs",
         "utf-8",
     ]
