@@ -34,7 +34,11 @@ def grade_table_rows(grades: list[dict]) -> list[tuple[str, str, str, str, str]]
 def grade_analytics(grades: list[dict]) -> dict:
     numeric = []
     uncounted = 0
-    for grade in grades:
+    excluded_zero, excluded_deferred = _zero_score_placeholder_indexes(grades)
+    for index, grade in enumerate(grades):
+        if index in excluded_zero:
+            uncounted += 1
+            continue
         grade_point = _grade_point(grade)
         if grade_point is None:
             uncounted += 1
@@ -83,6 +87,8 @@ def grade_analytics(grades: list[dict]) -> dict:
         "credit_course_count": sum(1 for _, _, credit in numeric if credit > 0),
         "counted_credit_total": round(credit_total, 3),
         "uncounted_course_count": uncounted,
+        "excluded_deferred_count": len(excluded_deferred),
+        "excluded_zero_placeholder_count": len(excluded_zero),
         "highest_score": highest[1],
         "highest_course": highest[0].get("course_name", "") if highest[0] else "",
         "semester_trend": semester_trend,
@@ -232,6 +238,48 @@ def _number(value) -> float | None:
     except ValueError:
         return None
     return number if isfinite(number) else None
+
+
+def _zero_score_placeholder_indexes(grades: list[dict]) -> tuple[set[int], set[int]]:
+    grouped: dict[tuple[str, ...], list[tuple[int, float | None]]] = defaultdict(list)
+    for index, grade in enumerate(grades):
+        key = _analytics_course_key(index, grade)
+        grouped[key].append((index, _number(grade.get("score"))))
+
+    zero_score = set()
+    deferred = set()
+    for rows in grouped.values():
+        zero_rows = {index for index, score in rows if score == 0}
+        zero_score.update(zero_rows)
+        has_positive_score = any(score is not None and score > 0 for _, score in rows)
+        if has_positive_score:
+            deferred.update(zero_rows)
+    return zero_score, deferred
+
+
+def _analytics_course_key(index: int, grade: dict) -> tuple[str, ...]:
+    course_code = str(grade.get("course_code", "")).strip()
+    course_name = str(grade.get("course_name", "")).strip()
+    raw = grade.get("raw", {})
+    if isinstance(raw, dict):
+        if not course_code:
+            course_code = str(_first(raw, ("kcbh", "kcdm", "课程代码", "课程编号"))).strip()
+        if not course_name:
+            course_name = str(_first(raw, ("kcmc", "课程名称", "name"))).strip()
+    if course_code:
+        return ("code", course_code, course_name)
+    if course_name:
+        credit = str(grade.get("credit", "")).strip()
+        return ("name", course_name, credit)
+    return ("row", str(index))
+
+
+def _first(values: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = values.get(key)
+        if value is not None and str(value).strip():
+            return str(value)
+    return ""
 
 
 def _grade_point(grade: dict) -> float | None:

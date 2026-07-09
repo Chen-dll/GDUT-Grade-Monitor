@@ -72,6 +72,20 @@ class TranscriptExportTests(unittest.TestCase):
         self.assertIn("page-break-inside: avoid", html)
         self.assertIn("background: #ffffff", html)
 
+    def test_build_transcript_html_excludes_zero_score_placeholders_from_average_score(self):
+        html = build_transcript_html(
+            [
+                {"semester": "202502", "course_code": "CS101", "course_name": "数据结构", "score": "0", "credit": "3"},
+                {"semester": "202502", "course_code": "CS101", "course_name": "数据结构", "score": "90", "credit": "3"},
+                {"semester": "202502", "course_code": "MATH101", "course_name": "高数", "score": "80", "credit": "2"},
+            ],
+            {},
+            generated_at=date(2026, 7, 8),
+        )
+
+        self.assertIn("<th>平均成绩</th><td>86</td>", html)
+        self.assertIn("<th>参与绩点统计学分</th><td>5</td>", html)
+
     def test_write_transcript_html_creates_parent_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "nested" / "transcript.html"

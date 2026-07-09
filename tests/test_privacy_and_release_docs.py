@@ -19,6 +19,8 @@ class PrivacyAndReleaseDocsTests(unittest.TestCase):
 
         self.assertIn("PRIVACY.md", text)
         self.assertIn("检查更新", text)
+        self.assertIn("安装小补丁", text)
+        self.assertIn("GDUTGradeMonitor-patch-v旧版本-to-v新版本.zip", text)
         self.assertIn("SHA256SUMS.txt", text)
 
     def test_readme_has_three_minute_quick_start_for_normal_users(self):
@@ -39,6 +41,8 @@ class PrivacyAndReleaseDocsTests(unittest.TestCase):
         self.assertIn("中文路径", text)
         self.assertIn("空格路径", text)
         self.assertIn("启动项残留清理", text)
+        self.assertIn("小补丁更新验收", text)
+        self.assertIn("GDUTGradeMonitor-patch-v旧版本-to-v新版本.zip", text)
         self.assertIn("不要上传含真实账号", text)
 
     def test_packaging_includes_privacy_doc_and_checksum_generation(self):

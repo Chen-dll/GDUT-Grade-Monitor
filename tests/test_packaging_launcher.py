@@ -53,6 +53,30 @@ class PackagingLauncherTests(unittest.TestCase):
         self.assertIn(".gdut-grade-monitor", cleanup)
         self.assertIn("Windows Credential Manager", cleanup)
 
+    def test_build_script_packages_patch_update_helper(self):
+        build = Path("scripts/build_exe.ps1").read_text(encoding="utf-8")
+        helper = Path("scripts/apply_patch_update.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("apply_patch_update.ps1", build)
+        self.assertIn("GDUTGradeMonitor-PatchUpdate.ps1", build)
+        self.assertIn("Wait-Process", helper)
+        self.assertIn("Expand-Archive", helper)
+        self.assertIn("Test-SafeRelativePath", helper)
+        self.assertIn("Patch manifest contains unsafe path", helper)
+
+    def test_patch_build_script_creates_manifest_and_zip_for_release_assets(self):
+        text = Path("scripts/build_patch.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("OldVersion", text)
+        self.assertIn("NewVersion", text)
+        self.assertIn("PreviousDist", text)
+        self.assertIn("CurrentDist", text)
+        self.assertIn('GDUTGradeMonitor-patch-v$OldVersion-to-v$NewVersion', text)
+        self.assertIn('"$assetPrefix.zip"', text)
+        self.assertIn("archive_sha256", text)
+        self.assertIn("Get-FileHash", text)
+        self.assertIn("files", text)
+
     def test_portable_release_smoke_script_checks_common_user_paths(self):
         text = Path("scripts/test_portable_release.ps1").read_text(encoding="utf-8")
 

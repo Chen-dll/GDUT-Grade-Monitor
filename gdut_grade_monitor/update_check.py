@@ -18,12 +18,24 @@ class UpdateCheckError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class PatchUpdate:
+    from_version: str
+    to_version: str
+    manifest_name: str
+    manifest_url: str
+    archive_name: str
+    archive_url: str
+    archive_size: int
+
+
+@dataclass(frozen=True)
 class GitHubRelease:
     tag_name: str
     name: str
     url: str
     body: str
     is_newer: bool
+    patch_update: PatchUpdate | None = None
 
 
 def parse_version(version: str) -> tuple[int, int, int]:
@@ -65,4 +77,42 @@ def check_latest_release(current_version: str = APP_VERSION, requests_module: An
         url=url,
         body=body,
         is_newer=is_newer_version(tag, current_version),
+        patch_update=_find_patch_update(payload.get("assets", []), current_version, tag),
+    )
+
+
+def _version_tag(version: str) -> str:
+    text = version.strip()
+    return text if text.lower().startswith("v") else f"v{text}"
+
+
+def _find_patch_update(assets: Any, current_version: str, latest_version: str) -> PatchUpdate | None:
+    if not isinstance(assets, list):
+        return None
+    from_tag = _version_tag(current_version)
+    to_tag = _version_tag(latest_version)
+    prefix = f"GDUTGradeMonitor-patch-{from_tag}-to-{to_tag}"
+    manifest_name = f"{prefix}.json"
+    archive_name = f"{prefix}.zip"
+    by_name = {
+        str(asset.get("name", "")): asset
+        for asset in assets
+        if isinstance(asset, dict) and str(asset.get("name", ""))
+    }
+    manifest = by_name.get(manifest_name)
+    archive = by_name.get(archive_name)
+    if not manifest or not archive:
+        return None
+    manifest_url = str(manifest.get("browser_download_url") or "")
+    archive_url = str(archive.get("browser_download_url") or "")
+    if not manifest_url or not archive_url:
+        return None
+    return PatchUpdate(
+        from_version=from_tag,
+        to_version=to_tag,
+        manifest_name=manifest_name,
+        manifest_url=manifest_url,
+        archive_name=archive_name,
+        archive_url=archive_url,
+        archive_size=int(archive.get("size") or 0),
     )

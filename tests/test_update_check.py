@@ -2,6 +2,7 @@ import unittest
 
 from gdut_grade_monitor.update_check import (
     GitHubRelease,
+    PatchUpdate,
     UpdateCheckError,
     check_latest_release,
     is_newer_version,
@@ -71,6 +72,67 @@ class UpdateCheckTests(unittest.TestCase):
         )
         self.assertIn("/repos/Chen-Dll/GDUT-Grade-Monitor/releases/latest", fake.calls[0][0])
         self.assertEqual(fake.calls[0][2], 8)
+
+    def test_check_latest_release_detects_matching_patch_assets(self):
+        fake = FakeRequests(
+            FakeResponse(
+                {
+                    "tag_name": "v0.3.2",
+                    "name": "GDUT 成绩提醒 v0.3.2",
+                    "html_url": "https://github.com/Chen-Dll/GDUT-Grade-Monitor/releases/tag/v0.3.2",
+                    "assets": [
+                        {
+                            "name": "GDUTGradeMonitor-patch-v0.3.1-to-v0.3.2.json",
+                            "browser_download_url": "https://example.invalid/patch.json",
+                            "size": 512,
+                        },
+                        {
+                            "name": "GDUTGradeMonitor-patch-v0.3.1-to-v0.3.2.zip",
+                            "browser_download_url": "https://example.invalid/patch.zip",
+                            "size": 4096,
+                        },
+                    ],
+                }
+            )
+        )
+
+        result = check_latest_release(current_version="0.3.1", requests_module=fake)
+
+        self.assertEqual(
+            result.patch_update,
+            PatchUpdate(
+                from_version="v0.3.1",
+                to_version="v0.3.2",
+                manifest_name="GDUTGradeMonitor-patch-v0.3.1-to-v0.3.2.json",
+                manifest_url="https://example.invalid/patch.json",
+                archive_name="GDUTGradeMonitor-patch-v0.3.1-to-v0.3.2.zip",
+                archive_url="https://example.invalid/patch.zip",
+                archive_size=4096,
+            ),
+        )
+
+    def test_check_latest_release_ignores_patch_for_other_source_version(self):
+        fake = FakeRequests(
+            FakeResponse(
+                {
+                    "tag_name": "v0.3.2",
+                    "assets": [
+                        {
+                            "name": "GDUTGradeMonitor-patch-v0.3.0-to-v0.3.2.json",
+                            "browser_download_url": "https://example.invalid/patch.json",
+                        },
+                        {
+                            "name": "GDUTGradeMonitor-patch-v0.3.0-to-v0.3.2.zip",
+                            "browser_download_url": "https://example.invalid/patch.zip",
+                        },
+                    ],
+                }
+            )
+        )
+
+        result = check_latest_release(current_version="0.3.1", requests_module=fake)
+
+        self.assertIsNone(result.patch_update)
 
     def test_check_latest_release_wraps_network_errors_for_gui(self):
         fake = FakeRequests(exc=OSError("network down"))

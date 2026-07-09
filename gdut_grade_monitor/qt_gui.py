@@ -75,12 +75,13 @@ from .notification_channels import (
 )
 from .notify import NOTIFICATION_PRIVACY_DETAILED, NOTIFICATION_PRIVACY_PRIVATE, NOTIFICATION_PRIVACY_SUMMARY
 from .official_transcript import OFFICIAL_TRANSCRIPT_PORTAL_URL, official_transcript_guidance
+from .patch_update import build_patch_apply_plan, can_apply_patch, current_install_dir, download_patch_package, launch_patch_apply
 from .setup_flow import FirstRunSetupResult, run_first_run_setup
 from .settings_backup import export_settings, import_settings
 from .storage import AppPaths, load_config, load_state, reset_config, save_config, set_poll_interval
 from .task import autostart_exists, install_task_or_startup, startup_script_is_stale, uninstall_task_and_startup
 from .transcript import TRANSCRIPT_NOTICE, build_transcript_html, write_transcript_html
-from .update_check import GitHubRelease, check_latest_release
+from .update_check import GitHubRelease, PatchUpdate, check_latest_release
 
 
 class _Signals(QObject):
@@ -2125,8 +2126,16 @@ class GradeMonitorQtApp(QMainWindow):
         self.avg_gpa_label.setText("--" if analytics["average_gpa"] is None else f"{analytics['average_gpa']:.2f}")
         self.counted_courses_label.setText(str(analytics["numeric_gpa_count"]))
         note_parts = [f"本地快照共 {analytics['course_count']} 门", f"参与统计学分 {analytics['counted_credit_total']:g}"]
-        if analytics["uncounted_course_count"]:
-            note_parts.append(f"{analytics['uncounted_course_count']} 门缺少成绩或绩点，暂不参与平均绩点")
+        zero_placeholder_count = analytics.get("excluded_zero_placeholder_count", 0)
+        deferred_count = analytics.get("excluded_deferred_count", 0)
+        missing_count = max(analytics["uncounted_course_count"] - zero_placeholder_count, 0)
+        if missing_count:
+            note_parts.append(f"{missing_count} 门缺少成绩或绩点，暂不参与平均绩点")
+        unreleased_count = max(zero_placeholder_count - deferred_count, 0)
+        if unreleased_count:
+            note_parts.append(f"{unreleased_count} 条未评教或未开放成绩记录未计入")
+        if deferred_count:
+            note_parts.append(f"{deferred_count} 条疑似缓考 0 分记录未计入")
         self.grade_stats_note.setText(" · ".join(note_parts))
         if analytics["highest_score"] is None:
             self.highest_score_label.setText("--")
@@ -2422,7 +2431,27 @@ class GradeMonitorQtApp(QMainWindow):
         box.setIcon(QMessageBox.Information)
         if release.is_newer:
             box.setText(f"发现新版本 {release.tag_name}")
-            box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n是否打开下载页面？")
+            if release.patch_update and can_apply_patch():
+                box.setInformativeText(
+                    f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n"
+                    "此版本提供小补丁，可只下载变化文件并自动应用。更新前会校验 SHA256，应用时会短暂关闭并重启程序。"
+                )
+                patch_button = box.addButton("安装小补丁", QMessageBox.AcceptRole)
+                open_button = box.addButton("打开下载页", QMessageBox.ActionRole)
+                box.addButton("稍后", QMessageBox.RejectRole)
+                box.exec()
+                if box.clickedButton() is patch_button:
+                    self.apply_patch_update(release.patch_update)
+                elif box.clickedButton() is open_button:
+                    QDesktopServices.openUrl(QUrl(release.url))
+                return
+            if release.patch_update and not can_apply_patch():
+                box.setInformativeText(
+                    f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n"
+                    "此版本提供小补丁，但当前不是打包安装版运行，无法自动应用。是否打开下载页面？"
+                )
+            else:
+                box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n是否打开下载页面？")
             open_button = box.addButton("打开下载页", QMessageBox.AcceptRole)
             box.addButton("稍后", QMessageBox.RejectRole)
             box.exec()
@@ -2433,6 +2462,33 @@ class GradeMonitorQtApp(QMainWindow):
         box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.tag_name}")
         box.addButton(QMessageBox.Ok)
         box.exec()
+
+    def apply_patch_update(self, patch: PatchUpdate) -> None:
+        self._run_background(lambda: self._prepare_patch_update(patch), self._patch_update_ready)
+
+    def _prepare_patch_update(self, patch: PatchUpdate):
+        archive_path, manifest = download_patch_package(patch, self.paths, current_version=APP_VERSION)
+        return build_patch_apply_plan(
+            patch=patch,
+            archive_path=archive_path,
+            manifest=manifest,
+            data_dir=self.paths.root,
+            install_dir=current_install_dir(),
+            current_pid=os.getpid(),
+        )
+
+    def _patch_update_ready(self, plan) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "安装小补丁",
+            "补丁已下载并通过校验。\n\n点击“是”后程序会关闭，补丁助手会替换变化文件并重新打开应用。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        launch_patch_apply(plan)
+        QApplication.quit()
 
     def export_diagnostics(self) -> None:
         target, _ = QFileDialog.getSaveFileName(

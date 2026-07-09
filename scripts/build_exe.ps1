@@ -102,6 +102,7 @@ Copy-Item -LiteralPath "scripts\cleanup_residue.ps1" -Destination ".\dist\GDUTGr
 Copy-Item -LiteralPath "scripts\cleanup_residue.ps1" -Destination ".\dist\GDUTGradeMonitor\GDUTGradeMonitor-Cleanup.ps1" -Force
 Copy-Item -LiteralPath "scripts\cleanup_residue.cmd" -Destination ".\dist\GDUTGradeMonitor-Cleanup.cmd" -Force
 Copy-Item -LiteralPath "scripts\cleanup_residue.cmd" -Destination ".\dist\GDUTGradeMonitor\GDUTGradeMonitor-Cleanup.cmd" -Force
+Copy-Item -LiteralPath "scripts\apply_patch_update.ps1" -Destination ".\dist\GDUTGradeMonitor\GDUTGradeMonitor-PatchUpdate.ps1" -Force
 
 $zipPath = ".\dist\GDUTGradeMonitor-portable.zip"
 if (Test-Path -LiteralPath $zipPath) {

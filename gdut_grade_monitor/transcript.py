@@ -173,7 +173,7 @@ def _average_score(grades: list[dict[str, Any]]) -> float | None:
     scored = []
     for grade in grades:
         score = _number(grade.get("score"))
-        if score is None:
+        if score is None or score == 0:
             continue
         credit = _number(grade.get("credit")) or 0
         scored.append((score, credit))

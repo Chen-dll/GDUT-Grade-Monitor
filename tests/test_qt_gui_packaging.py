@@ -166,6 +166,12 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("open_cleanup_assistant", text)
         self.assertIn("cleanup_residue", text)
         self.assertIn("startup_script_is_stale", text)
+        self.assertIn("安装小补丁", text)
+        self.assertIn("download_patch_package", text)
+        self.assertIn("build_patch_apply_plan", text)
+        self.assertIn("launch_patch_apply", text)
+        self.assertIn("can_apply_patch", text)
+        self.assertIn("SHA256", text)
 
     def test_first_run_wizard_auto_open_is_limited_to_unconfigured_users(self):
         text = Path("gdut_grade_monitor/qt_gui.py").read_text(encoding="utf-8")

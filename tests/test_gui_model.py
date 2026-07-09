@@ -282,6 +282,67 @@ class GuiModelTests(unittest.TestCase):
         self.assertEqual(analytics["average_gpa"], 4.533)
         self.assertEqual(analytics["distribution"], {"4-5": 2, "3-4": 0, "2-3": 0, "0-2": 0})
 
+    def test_grade_analytics_excludes_zero_score_deferred_duplicate_from_credits(self):
+        grades = [
+            {"semester": "202502", "course_code": "CS101", "course_name": "数据结构", "score": "0", "credit": "3"},
+            {"semester": "202502", "course_code": "CS101", "course_name": "数据结构", "score": "90", "credit": "3", "grade_point": "4.0"},
+            {"semester": "202502", "course_code": "MATH101", "course_name": "高数", "score": "80", "credit": "2", "grade_point": "3.0"},
+        ]
+
+        analytics = grade_analytics(grades)
+
+        self.assertEqual(analytics["course_count"], 3)
+        self.assertEqual(analytics["numeric_gpa_count"], 2)
+        self.assertEqual(analytics["credit_course_count"], 2)
+        self.assertEqual(analytics["counted_credit_total"], 5)
+        self.assertEqual(analytics["uncounted_course_count"], 1)
+        self.assertEqual(analytics["excluded_deferred_count"], 1)
+        self.assertEqual(analytics["excluded_zero_placeholder_count"], 1)
+        self.assertEqual(analytics["average_gpa"], 3.6)
+        self.assertEqual(analytics["semester_trend"], [("202502", 3.6)])
+
+    def test_grade_analytics_excludes_single_zero_score_placeholder_from_credits(self):
+        grades = [
+            {"semester": "202502", "course_code": "PE4", "course_name": "体育(4)", "score": "0", "credit": "1"},
+        ]
+
+        analytics = grade_analytics(grades)
+
+        self.assertEqual(analytics["course_count"], 1)
+        self.assertEqual(analytics["numeric_gpa_count"], 0)
+        self.assertEqual(analytics["credit_course_count"], 0)
+        self.assertEqual(analytics["counted_credit_total"], 0)
+        self.assertEqual(analytics["uncounted_course_count"], 1)
+        self.assertEqual(analytics["excluded_deferred_count"], 0)
+        self.assertEqual(analytics["excluded_zero_placeholder_count"], 1)
+        self.assertIsNone(analytics["average_gpa"])
+
+    def test_grade_analytics_detects_deferred_duplicate_without_course_code(self):
+        grades = [
+            {"semester": "202502", "course_name": "大学物理", "score": "0", "credit": "2"},
+            {"semester": "202502", "course_name": "大学物理", "score": "85", "credit": "2", "grade_point": "3.5"},
+        ]
+
+        analytics = grade_analytics(grades)
+
+        self.assertEqual(analytics["numeric_gpa_count"], 1)
+        self.assertEqual(analytics["counted_credit_total"], 2)
+        self.assertEqual(analytics["excluded_deferred_count"], 1)
+        self.assertEqual(analytics["excluded_zero_placeholder_count"], 1)
+
+    def test_grade_analytics_marks_same_course_across_semester_as_deferred_placeholder(self):
+        grades = [
+            {"semester": "202401", "course_name": "大学物理", "score": "0", "credit": "2"},
+            {"semester": "202502", "course_name": "大学物理", "score": "85", "credit": "2", "grade_point": "3.5"},
+        ]
+
+        analytics = grade_analytics(grades)
+
+        self.assertEqual(analytics["numeric_gpa_count"], 1)
+        self.assertEqual(analytics["counted_credit_total"], 2)
+        self.assertEqual(analytics["excluded_deferred_count"], 1)
+        self.assertEqual(analytics["excluded_zero_placeholder_count"], 1)
+
     def test_filter_grades_supports_semester_search_and_elective_toggle(self):
         grades = [
             {"semester": "202401", "course_code": "MATH", "course_name": "高数", "raw": {"课程性质": "必修"}},
