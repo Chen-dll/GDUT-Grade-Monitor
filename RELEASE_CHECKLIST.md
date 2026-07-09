@@ -33,6 +33,7 @@
 - [ ] 如本次发布提供小补丁，运行 `scripts\build_patch.ps1` 生成 `GDUTGradeMonitor-patch-v旧版本-to-v新版本.zip` 和同名 `.json`。
 - [ ] 把补丁 zip/json 随新版 Release 一起上传。
 - [ ] 旧版打包应用点击“设置 -> 检查更新”后显示“安装小补丁”。
+- [ ] 检查更新、下载补丁和立即检查时都有处理中提示，连续点击不会启动多个后台任务。
 - [ ] 补丁应用前会校验 SHA256，应用后程序能自动重新启动。
 - [ ] 补丁不包含 `%USERPROFILE%\.gdut-grade-monitor`、密码、Cookie、通知密钥或真实成绩数据。
 
@@ -55,4 +56,5 @@
 - [ ] 可选：`dist\GDUTGradeMonitor-patch-v旧版本-to-v新版本.json`
 - [ ] `README.md`
 - [ ] `PRIVACY.md`
-- [ ] `RELEASE_NOTES_v0.3.0.md`
+- [ ] `CHANGELOG.md`
+- [ ] `RELEASE_NOTES_v0.3.2.md`

@@ -13,6 +13,7 @@
 - Grade analytics now treats zero-score placeholder rows as not-yet-open or not-evaluated results and excludes them from counted credits, GPA, GPA distribution, and transcript average score.
 - Duplicate zero-score rows with a matching positive result are now shown as likely deferred-exam placeholders.
 - Update dialogs now explain when small patches are available and when a full installer or portable package is required.
+- Manual check, update check, and small-patch download now show modal progress hints and block duplicate clicks while a task is already running.
 
 ### Fixed
 

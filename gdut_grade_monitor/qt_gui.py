@@ -1262,6 +1262,7 @@ class GradeMonitorQtApp(QMainWindow):
         self._setup_progress: QProgressDialog | None = None
         self._setup_progress_timer: QTimer | None = None
         self._setup_progress_index = 0
+        self._busy_progress: QProgressDialog | None = None
         self.setWindowTitle(f"GDUT 成绩提醒 v{APP_VERSION}")
         self.setWindowIcon(QIcon(str(app_icon_path())))
         self.setMinimumSize(1060, 640)
@@ -2278,7 +2279,12 @@ class GradeMonitorQtApp(QMainWindow):
         QMessageBox.critical(self, "一键配置本机", message)
 
     def check_now(self) -> None:
-        self._run_background(self._check_now_worker, self._check_complete)
+        self._run_background_with_progress(
+            "立即检查",
+            "正在只读连接教务系统并检查成绩...\n如果弹出登录页面，请按学校页面完成验证。",
+            self._check_now_worker,
+            self._check_complete,
+        )
 
     def _check_now_worker(self) -> tuple[list[dict], list[dict]]:
         config = load_config(self.paths)
@@ -2423,7 +2429,12 @@ class GradeMonitorQtApp(QMainWindow):
             QMessageBox.information(self, "恢复后台检查", message)
 
     def check_for_updates(self) -> None:
-        self._run_background(lambda: check_latest_release(APP_VERSION), self._update_check_complete)
+        self._run_background_with_progress(
+            "检查更新",
+            "正在连接 GitHub Release 检查新版本...",
+            lambda: check_latest_release(APP_VERSION),
+            self._update_check_complete,
+        )
 
     def _update_check_complete(self, release: GitHubRelease) -> None:
         box = QMessageBox(self)
@@ -2432,9 +2443,11 @@ class GradeMonitorQtApp(QMainWindow):
         if release.is_newer:
             box.setText(f"发现新版本 {release.tag_name}")
             if release.patch_update and can_apply_patch():
+                patch_size = _format_bytes(release.patch_update.archive_size)
                 box.setInformativeText(
                     f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n"
-                    "此版本提供小补丁，可只下载变化文件并自动应用。更新前会校验 SHA256，应用时会短暂关闭并重启程序。\n\n"
+                    f"此版本提供小补丁，预计下载 {patch_size}，可只下载变化文件并自动应用。"
+                    "更新前会校验 SHA256，应用时会短暂关闭并重启程序。\n\n"
                     "小补丁能力从 v0.3.2 开始提供；更早版本需要先下载完整安装包或便携包。"
                 )
                 patch_button = box.addButton("安装小补丁", QMessageBox.AcceptRole)
@@ -2465,7 +2478,12 @@ class GradeMonitorQtApp(QMainWindow):
         box.exec()
 
     def apply_patch_update(self, patch: PatchUpdate) -> None:
-        self._run_background(lambda: self._prepare_patch_update(patch), self._patch_update_ready)
+        self._run_background_with_progress(
+            "安装小补丁",
+            "正在下载小补丁并校验 SHA256...\n这一步不会修改你的账号、Cookie、成绩快照或通知密钥。",
+            lambda: self._prepare_patch_update(patch),
+            self._patch_update_ready,
+        )
 
     def _prepare_patch_update(self, patch: PatchUpdate):
         archive_path, manifest = download_patch_package(patch, self.paths, current_version=APP_VERSION)
@@ -2482,7 +2500,9 @@ class GradeMonitorQtApp(QMainWindow):
         confirm = QMessageBox.question(
             self,
             "安装小补丁",
-            "补丁已下载并通过校验。\n\n点击“是”后程序会关闭，补丁助手会替换变化文件并重新打开应用。",
+            "补丁已下载并通过校验。\n\n"
+            "点击“是”后程序会关闭，补丁助手会替换应用文件并重新打开程序。\n"
+            "本地配置、密码、Cookie、成绩快照和通知密钥不会被补丁覆盖。",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
@@ -2600,6 +2620,50 @@ class GradeMonitorQtApp(QMainWindow):
                 signals.error.emit(user_friendly_error_message(exc))
 
         threading.Thread(target=runner, daemon=True).start()
+
+    def _run_background_with_progress(
+        self,
+        title: str,
+        message: str,
+        target: Callable[[], object],
+        on_success: Callable[[object], None],
+        on_error: Callable[[str], None] | None = None,
+    ) -> None:
+        if self._busy_progress is not None:
+            QMessageBox.information(self, title, "已有一个操作正在进行，请等待它完成后再试。")
+            return
+        self._show_busy_progress(title, message)
+
+        def success(result: object) -> None:
+            self._close_busy_progress()
+            on_success(result)
+
+        def failure(text: str) -> None:
+            self._close_busy_progress()
+            if on_error:
+                on_error(text)
+            else:
+                QMessageBox.critical(self, title, text)
+
+        self._run_background(target, success, failure)
+
+    def _show_busy_progress(self, title: str, message: str) -> None:
+        self._close_busy_progress()
+        self._busy_progress = QProgressDialog(message, "", 0, 0, self)
+        self._busy_progress.setWindowTitle(title)
+        self._busy_progress.setCancelButton(None)
+        self._busy_progress.setWindowModality(Qt.WindowModal)
+        self._busy_progress.setMinimumWidth(500)
+        self._busy_progress.setMinimumHeight(130)
+        self._busy_progress.setMinimumDuration(0)
+        self._busy_progress.setAutoClose(False)
+        self._busy_progress.show()
+
+    def _close_busy_progress(self) -> None:
+        if self._busy_progress:
+            self._busy_progress.close()
+            self._busy_progress.deleteLater()
+            self._busy_progress = None
 
     def _apply_style(self) -> None:
         self.setStyleSheet(
@@ -2851,6 +2915,19 @@ def app_icon_path() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / "gdut_grade_monitor" / "assets" / "icon.ico"
     return Path(__file__).resolve().parent / "assets" / "icon.ico"
+
+
+def _format_bytes(size: int) -> str:
+    value = max(0, int(size or 0))
+    if value == 0:
+        return "少量文件"
+    units = ["B", "KB", "MB", "GB"]
+    amount = float(value)
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount)} B"
+        amount /= 1024
+    return f"{value} B"
 
 
 def _dialog_stylesheet() -> str:
