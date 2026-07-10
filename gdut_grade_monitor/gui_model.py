@@ -17,18 +17,29 @@ def status_summary(startup_installed: bool, state: dict) -> str:
     return f"自启动: {startup}    检查状态: {last_status}    变化: {change_count}"
 
 
-def grade_table_rows(grades: list[dict]) -> list[tuple[str, str, str, str, str]]:
+def grade_table_rows(grades: list[dict], include_source: bool = False) -> list[tuple]:
     rows = [
-        (
-            str(grade.get("semester", "")),
-            str(grade.get("course_name", "")),
-            str(grade.get("score", "")),
-            str(grade.get("credit", "")),
-            _display_grade_point(grade),
-        )
+        _grade_table_row(grade, include_source=include_source)
         for grade in grades
     ]
     return sorted(rows, key=lambda row: (row[0], row[1]), reverse=True)
+
+
+def _grade_table_row(grade: dict, include_source: bool = False) -> tuple:
+    row = (
+        str(grade.get("semester", "")),
+        str(grade.get("course_name", "")),
+        str(grade.get("score", "")),
+        str(grade.get("credit", "")),
+        _display_grade_point(grade),
+    )
+    if include_source:
+        row = (*row, _score_source_label(grade))
+    return row
+
+
+def _score_source_label(grade: dict) -> str:
+    return "手动" if str(grade.get("score_source", "")) == "manual" else "官方"
 
 
 def grade_analytics(grades: list[dict]) -> dict:
@@ -545,6 +556,7 @@ def help_sections() -> list[dict[str, object]]:
             "body": "应用里有本地成绩单和官方成绩单两个入口，适用场景不同。",
             "items": [
                 "本地成绩单由本地成绩快照生成，适合自己核对和留档。",
+                "0 分或未出成绩课程可以在成绩页手动补录本地估算成绩；这会明显标记为手动补录。",
                 "官方成绩单会打开学校网上办事大厅，由你在网页中手动查看或下载。",
                 "打开官方成绩单入口时，本工具不会自动提交申请，也不会代替你点击办理流程。",
                 "如果学校页面调整，请以学校页面显示为准。",

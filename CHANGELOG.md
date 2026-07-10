@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.7 - 2026-07-10
+
+### Added
+
+- Added local manual score fill for courses whose official score is blank or 0.
+- Manual local scores are clearly marked in the grade table, details dialog, and local transcript export.
+- Added a separate "撤销补录" action so users can remove a local manual score and restore the official raw value.
+- Added a login-expired reminder notification when the background checker detects that the school-system session needs re-login.
+
+### Changed
+
+- Manual scores are stored only in local state and never change the official grade snapshot or school system data.
+- When an official score greater than 0 appears, the official value automatically takes precedence over the local manual score.
+- Manual numeric scores derive a local GPA estimate for local-only statistics and transcript export.
+- Login-expired reminders are throttled to avoid repeatedly notifying users while the same expired session remains unresolved.
+
+### Fixed
+
+- Manual fills no longer override official level grades such as "优秀".
+- Duplicate 0-score rows that already have a matching positive official result are treated as deferred-exam old records and are not manually replaced.
+
 ## 0.3.6 - 2026-07-09
 
 ### Fixed

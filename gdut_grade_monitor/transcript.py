@@ -50,6 +50,7 @@ def build_transcript_html(grades: list[dict[str, Any]], config: dict[str, Any], 
     .profile td {{ width: 34%; text-align: center; }}
     .courses th, .courses td {{ text-align: center; }}
     .courses td.name {{ text-align: left; }}
+    .manual {{ color: #b45309; font-size: 10px; font-weight: 700; }}
     .summary th {{ text-align: center; }}
     .summary td {{ text-align: left; }}
     .notice {{ margin-top: 10px; color: #dc2626; font-size: 12px; font-weight: 700; }}
@@ -116,18 +117,30 @@ def _course_row(grade: dict[str, Any]) -> str:
     raw = grade.get("raw", {})
     if not isinstance(raw, dict):
         raw = {}
+    score = _score_cell(grade)
     return (
         "<tr>"
         f"<td>{_e(grade.get('semester', ''))}</td>"
         f"<td>{_e(grade.get('course_code', ''))}</td>"
         f'<td class="name">{_e(grade.get("course_name", ""))}</td>'
         f"<td>{_e(_first(raw, ('课程性质', 'kcxzmc', 'kcxz', 'courseNature')))}</td>"
-        f"<td>{_e(grade.get('score', ''))}</td>"
+        f"<td>{score}</td>"
         f"<td>{_e(grade.get('credit', ''))}</td>"
         f"<td>{_e(_display_grade_point(grade))}</td>"
         f"<td>{_e(_first(raw, ('考试性质', 'ksxz', 'ksxzmc', 'examNature')))}</td>"
         "</tr>"
     )
+
+
+def _score_cell(grade: dict[str, Any]) -> str:
+    score = _e(grade.get("score", ""))
+    if str(grade.get("score_source", "")) != "manual":
+        return score
+    official = str(grade.get("official_score", "") or "").strip()
+    suffix = "手动补录，非官方"
+    if official:
+        suffix = f"{suffix}；官方原始成绩: {_e(official)}"
+    return f'{score}<div class="manual">{suffix}</div>'
 
 
 def _profile(config: dict[str, Any]) -> dict[str, str]:

@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from gdut_grade_monitor.auth import SessionExpiredError
 from gdut_grade_monitor.grades import normalize_grade
 from gdut_grade_monitor.gui_model import history_table_rows, next_check_summary
 from gdut_grade_monitor.monitor import GradeMonitor, _sleep_with_config_refresh, monitor_pause_remaining_seconds
@@ -205,6 +206,32 @@ class VersionEnhancementTests(unittest.TestCase):
             self.assertEqual(recovered_state["monitor"]["consecutive_failures"], 0)
             self.assertIn("last_success_at", recovered_state["monitor"])
             self.assertNotIn("last_error", recovered_state)
+
+    def test_monitor_notifies_when_login_expires_without_spamming(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = AppPaths(Path(tmp))
+            notifier = Mock()
+            monitor = GradeMonitor(paths=paths, fetcher=FailingFetcher(), notifier=notifier)
+
+            with patch(
+                "gdut_grade_monitor.monitor.now_iso",
+                side_effect=[
+                    "2026-07-10T10:00:00",
+                    "2026-07-10T10:30:00",
+                    "2026-07-10T23:00:00",
+                ],
+            ):
+                monitor._record_runtime_failure(SessionExpiredError("expired"))
+                monitor._record_runtime_failure(SessionExpiredError("still expired"))
+                monitor._record_runtime_failure(SessionExpiredError("still expired later"))
+
+            self.assertEqual(notifier.send.call_count, 2)
+            title, body = notifier.send.call_args_list[0].args
+            self.assertIn("重新登录", title)
+            self.assertIn("重新登录", body)
+            state = load_state(paths)
+            self.assertEqual(state["monitor"]["last_error_kind"], "login_expired")
+            self.assertEqual(state["monitor"]["last_login_expired_notification_at"], "2026-07-10T23:00:00")
 
     def test_monitor_pause_remaining_seconds_handles_future_expired_and_invalid_values(self):
         now = "2026-07-08T12:00:00"

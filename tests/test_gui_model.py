@@ -55,6 +55,22 @@ class GuiModelTests(unittest.TestCase):
 
         self.assertEqual(rows[0], ("202502", "体育(4)", "99", "1", "4.9"))
 
+    def test_grade_table_rows_can_include_manual_score_source(self):
+        rows = grade_table_rows(
+            [
+                {
+                    "semester": "202502",
+                    "course_name": "数据结构",
+                    "score": "88",
+                    "credit": "3",
+                    "score_source": "manual",
+                }
+            ],
+            include_source=True,
+        )
+
+        self.assertEqual(rows[0], ("202502", "数据结构", "88", "3", "3.8", "手动"))
+
     def test_setup_guidance_invites_one_click_setup_for_new_computer(self):
         config = {"student_id": "", "poll_interval_minutes": 30}
         state = {}

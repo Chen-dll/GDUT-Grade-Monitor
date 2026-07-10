@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -67,6 +68,7 @@ from .gui_model import help_sections, history_table_rows
 from .gui_model import onboarding_steps, recent_change_rows, semester_options
 from .gui_model import setup_guidance, status_center_rows, status_summary
 from .log_view import write_log_view_file
+from .manual_scores import apply_manual_scores, delete_manual_score, manual_score_allowed, set_manual_score
 from .monitor import GradeMonitor, monitor_pause_remaining_seconds
 from .notification_channels import (
     NotificationSecretStore,
@@ -974,7 +976,10 @@ class GradeDetailDialog(QDialog):
             ("成绩", grade.get("score", "")),
             ("学分", grade.get("credit", "")),
             ("绩点", grade_table_rows([grade])[0][4]),
+            ("来源", "手动补录" if str(grade.get("score_source", "")) == "manual" else "官方成绩"),
         ]
+        if str(grade.get("score_source", "")) == "manual":
+            fields.append(("官方原始成绩", grade.get("official_score", "")))
         grid = QGridLayout()
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(10)
@@ -1651,6 +1656,14 @@ class GradeMonitorQtApp(QMainWindow):
         export_transcript.setObjectName("secondaryButton")
         export_transcript.setToolTip("从本地成绩快照生成 PDF 或 HTML，不提交学校成绩单申请。")
         export_transcript.clicked.connect(self.export_transcript)
+        manual_score = QPushButton("手动补录")
+        manual_score.setObjectName("secondaryButton")
+        manual_score.setToolTip("仅在本地为 0 分或未出成绩课程填写估算成绩；官方成绩大于 0 后自动以官方为准。")
+        manual_score.clicked.connect(self.edit_manual_score)
+        clear_manual_score = QPushButton("撤销补录")
+        clear_manual_score.setObjectName("secondaryButton")
+        clear_manual_score.setToolTip("删除选中课程的本地手动补录成绩，恢复显示官方原始成绩。")
+        clear_manual_score.clicked.connect(self.clear_manual_score)
         official_transcript = QPushButton("官方成绩单")
         official_transcript.setObjectName("secondaryButton")
         official_transcript.setToolTip("打开学校网上办事大厅，由你手动查看或下载官方成绩单。")
@@ -1658,13 +1671,17 @@ class GradeMonitorQtApp(QMainWindow):
         filters.addWidget(self.semester_filter)
         filters.addWidget(self.include_electives)
         filters.addWidget(self.course_search, 1)
+        filters.addWidget(manual_score)
+        filters.addWidget(clear_manual_score)
         filters.addWidget(export_transcript)
         filters.addWidget(official_transcript)
 
-        self.grades_table = QTableWidget(0, 5)
-        self.grades_table.setHorizontalHeaderLabels(["学期", "课程", "成绩", "学分", "绩点"])
+        self.grades_table = QTableWidget(0, 6)
+        self.grades_table.setHorizontalHeaderLabels(["学期", "课程", "成绩", "学分", "绩点", "来源"])
         self._prepare_table(self.grades_table)
+        self.grades_table.setSelectionMode(QTableWidget.SingleSelection)
         self.grades_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.grades_table.setColumnWidth(5, 78)
         self.visible_grades: list[dict] = []
         self.grades_table.cellDoubleClicked.connect(self.show_grade_detail)
         page.layout().addWidget(title)
@@ -2195,7 +2212,8 @@ class GradeMonitorQtApp(QMainWindow):
             self.summary_grid.addWidget(card, 0, index)
 
     def refresh_grades(self) -> None:
-        grades = list(load_state(self.paths).get("grades", {}).values())
+        state = load_state(self.paths)
+        grades = apply_manual_scores(list(state.get("grades", {}).values()), state.get("manual_scores", {}))
         current_semester = self.semester_filter.currentText() if self.semester_filter.count() else "全部学期"
         options = semester_options(grades)
         self.semester_filter.blockSignals(True)
@@ -2237,12 +2255,89 @@ class GradeMonitorQtApp(QMainWindow):
             self.highest_score_label.setText(f"{analytics['highest_score']:.0f}")
         self.trend_chart.set_points(analytics["semester_trend"])
         self.distribution_chart.set_distribution(analytics["distribution"])
-        self._fill_table(self.grades_table, grade_table_rows(self.visible_grades))
+        self._fill_table(self.grades_table, grade_table_rows(self.visible_grades, include_source=True))
+        self._mark_manual_grade_rows()
 
     def show_grade_detail(self, row: int, _column: int) -> None:
         if row < 0 or row >= len(self.visible_grades):
             return
         GradeDetailDialog(self, self.visible_grades[row]).exec()
+
+    def edit_manual_score(self) -> None:
+        row = self.grades_table.currentRow()
+        if row < 0 or row >= len(self.visible_grades):
+            QMessageBox.information(self, "手动补录", "请先在成绩表里选中一门 0 分或未出成绩的课程。")
+            return
+        grade = self.visible_grades[row]
+        official_grades = list(load_state(self.paths).get("grades", {}).values())
+        if not manual_score_allowed(grade, official_grades):
+            QMessageBox.information(self, "手动补录", "这门课已有官方成绩，或属于缓考旧记录，不需要手动补录。")
+            return
+        identity = str(grade.get("identity", "") or "")
+        if not identity:
+            QMessageBox.warning(self, "手动补录", "这条成绩缺少本地课程标识，无法补录。")
+            return
+        current = str(grade.get("manual_score", "") or "")
+        value, ok = QInputDialog.getText(
+            self,
+            "手动补录",
+            "请输入本地估算成绩（0-100）。\n只保存在本机；官方成绩大于 0 后会自动以官方为准。",
+            text=current,
+        )
+        if not ok:
+            return
+        if not value.strip():
+            self._delete_manual_score(identity, silent=False)
+            return
+        try:
+            set_manual_score(self.paths, identity, value)
+        except ValueError as exc:
+            QMessageBox.warning(self, "手动补录", str(exc))
+            return
+        self.refresh_all()
+
+    def clear_manual_score(self) -> None:
+        row = self.grades_table.currentRow()
+        if row < 0 or row >= len(self.visible_grades):
+            QMessageBox.information(self, "撤销补录", "请先在成绩表里选中一门已经手动补录的课程。")
+            return
+        grade = self.visible_grades[row]
+        identity = str(grade.get("identity", "") or "")
+        if not identity or not grade.get("manual_score"):
+            QMessageBox.information(self, "撤销补录", "这门课没有本地手动补录成绩。")
+            return
+        if str(grade.get("score_source", "")) == "manual":
+            message = "确定删除这门课的本地手动补录成绩，并恢复显示官方原始成绩吗？"
+        else:
+            message = "官方成绩已经生效，本地补录不再影响显示。确定同时删除这条本地补录记录吗？"
+        confirm = QMessageBox.question(
+            self,
+            "撤销补录",
+            message,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        self._delete_manual_score(identity, silent=True)
+
+    def _delete_manual_score(self, identity: str, *, silent: bool) -> None:
+        delete_manual_score(self.paths, identity)
+        self.refresh_all()
+        if not silent:
+            QMessageBox.information(self, "手动补录", "已撤销这门课的本地手动补录成绩。")
+
+    def _mark_manual_grade_rows(self) -> None:
+        for row, grade in enumerate(self.visible_grades):
+            if str(grade.get("score_source", "")) != "manual":
+                continue
+            tooltip = "手动补录成绩，仅用于本地估算；官方成绩大于 0 后自动以官方为准。"
+            for column in range(self.grades_table.columnCount()):
+                item = self.grades_table.item(row, column)
+                if item is None:
+                    continue
+                item.setBackground(QColor("#fff7ed"))
+                item.setToolTip(tooltip)
 
     def refresh_history(self) -> None:
         self._fill_table(self.history_table, history_table_rows(load_state(self.paths), include_delivery=True))
@@ -2373,7 +2468,8 @@ class GradeMonitorQtApp(QMainWindow):
     def _one_click_setup_complete(self, payload: tuple[list[dict], FirstRunSetupResult]) -> None:
         self._close_setup_progress()
         grades, result = payload
-        self._fill_table(self.grades_table, grade_table_rows(grades))
+        applied = apply_manual_scores(grades, load_state(self.paths).get("manual_scores", {}))
+        self._fill_table(self.grades_table, grade_table_rows(applied, include_source=True))
         self.refresh_all()
         self._set_page(0)
         if result.startup_mode == "failed":
@@ -2447,13 +2543,15 @@ class GradeMonitorQtApp(QMainWindow):
 
     def _check_complete(self, payload: tuple[list[dict], list[dict]]) -> None:
         grades, changes = payload
-        self._fill_table(self.grades_table, grade_table_rows(grades))
+        applied = apply_manual_scores(grades, load_state(self.paths).get("manual_scores", {}))
+        self._fill_table(self.grades_table, grade_table_rows(applied, include_source=True))
         self.refresh_all()
         QMessageBox.information(self, "立即检查", f"检查完成，发现 {len(changes)} 项变化。")
 
     def _check_complete_silent(self, payload: tuple[list[dict], list[dict]]) -> None:
         grades, _changes = payload
-        self._fill_table(self.grades_table, grade_table_rows(grades))
+        applied = apply_manual_scores(grades, load_state(self.paths).get("manual_scores", {}))
+        self._fill_table(self.grades_table, grade_table_rows(applied, include_source=True))
         self.refresh_all()
 
     def _scheduled_check_complete(self, payload: tuple[list[dict], list[dict]]) -> None:
@@ -2711,7 +2809,7 @@ class GradeMonitorQtApp(QMainWindow):
 
     def export_transcript(self) -> None:
         state = load_state(self.paths)
-        grades = list(state.get("grades", {}).values())
+        grades = apply_manual_scores(list(state.get("grades", {}).values()), state.get("manual_scores", {}))
         if not grades:
             QMessageBox.warning(self, "导出成绩单", "还没有本地成绩快照。请先完成一键配置或立即检查。")
             return

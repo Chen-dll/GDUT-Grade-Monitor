@@ -86,6 +86,26 @@ class TranscriptExportTests(unittest.TestCase):
         self.assertIn("<th>平均成绩</th><td>86</td>", html)
         self.assertIn("<th>参与绩点统计学分</th><td>5</td>", html)
 
+    def test_build_transcript_html_marks_manual_scores(self):
+        html = build_transcript_html(
+            [
+                {
+                    "semester": "202502",
+                    "course_code": "CS101",
+                    "course_name": "数据结构",
+                    "score": "88",
+                    "credit": "3",
+                    "score_source": "manual",
+                    "official_score": "0",
+                }
+            ],
+            {},
+            generated_at=date(2026, 7, 8),
+        )
+
+        self.assertIn("手动补录", html)
+        self.assertIn("非官方", html)
+
     def test_write_transcript_html_creates_parent_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "nested" / "transcript.html"

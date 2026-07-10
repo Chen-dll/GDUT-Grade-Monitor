@@ -99,9 +99,13 @@ class GradeMonitor:
 
     def _record_runtime_failure(self, exc: BaseException) -> None:
         state = load_state(self.paths)
+        previous_monitor = state.get("monitor", {})
+        previous_kind = str(previous_monitor.get("last_error_kind", "") if isinstance(previous_monitor, dict) else "")
         checked_at = now_iso()
         poll_interval = int(load_config(self.paths).get("poll_interval_minutes", 30))
-        record_monitor_failure(state, exc, checked_at=checked_at, poll_interval_minutes=poll_interval)
+        issue = record_monitor_failure(state, exc, checked_at=checked_at, poll_interval_minutes=poll_interval)
+        if issue.kind == "login_expired":
+            self._notify_login_expired_if_needed(state, checked_at=checked_at, previous_kind=previous_kind)
         save_state(self.paths, state)
 
     def _record_runtime_status(self, status: str, error: str = "") -> None:
@@ -115,6 +119,24 @@ class GradeMonitor:
         if error:
             state["last_error"] = error
         save_state(self.paths, state)
+
+    def _notify_login_expired_if_needed(self, state: dict, *, checked_at: str, previous_kind: str) -> None:
+        monitor = state.get("monitor", {})
+        last_notified = str(monitor.get("last_login_expired_notification_at", "") or "")
+        if previous_kind == "login_expired" and not _login_expired_notice_due(last_notified, checked_at):
+            return
+        try:
+            self.notifier.send(
+                "GDUT 需要重新登录",
+                "教务系统登录状态可能已过期，请打开应用重新登录。恢复登录后会继续自动提醒。",
+            )
+            monitor["last_login_expired_notification_at"] = checked_at
+            monitor.pop("last_login_expired_notification_error", None)
+        except Exception as exc:
+            detail = redact_sensitive_detail(notification_error_message(exc))
+            self.logger.warning("Login-expired notification failed: %s", detail)
+            monitor["last_login_expired_notification_error"] = detail
+        state["monitor"] = monitor
 
 
 def _history_entry(change: dict, checked_at: str, delivery: list[dict] | None = None) -> dict:
@@ -212,3 +234,12 @@ def _record_next_check_at(paths: AppPaths, started_at_wall: datetime, interval_s
     monitor["next_check_at"] = next_check_at
     state["monitor"] = monitor
     save_state(paths, state)
+
+
+def _login_expired_notice_due(last_notified: str, checked_at: str, *, min_interval_hours: int = 12) -> bool:
+    try:
+        previous = datetime.fromisoformat(last_notified)
+        current = datetime.fromisoformat(checked_at)
+    except ValueError:
+        return True
+    return current - previous >= timedelta(hours=min_interval_hours)
