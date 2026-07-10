@@ -4,6 +4,7 @@ from gdut_grade_monitor.update_check import (
     GitHubRelease,
     PatchUpdate,
     UpdateCheckError,
+    UpdateSource,
     check_latest_release,
     is_newer_version,
     parse_version,
@@ -33,6 +34,11 @@ class FakeRequests:
         self.calls.append((url, headers, timeout))
         if self.exc:
             raise self.exc
+        if isinstance(self.response, list):
+            response = self.response[min(len(self.calls) - 1, len(self.response) - 1)]
+            if isinstance(response, Exception):
+                raise response
+            return response
         return self.response
 
 
@@ -72,6 +78,42 @@ class UpdateCheckTests(unittest.TestCase):
         )
         self.assertIn("/repos/Chen-Dll/GDUT-Grade-Monitor/releases/latest", fake.calls[0][0])
         self.assertEqual(fake.calls[0][2], 8)
+
+    def test_check_latest_release_falls_back_to_gitee_like_payload(self):
+        fake = FakeRequests(
+            [
+                OSError("github blocked"),
+                FakeResponse(
+                    {
+                        "tag_name": "v0.3.9",
+                        "name": "GDUT 成绩提醒 v0.3.9",
+                        "url": "https://gitee.com/Chen-Dll/GDUT-Grade-Monitor/releases/v0.3.9",
+                        "description": "mirror release notes",
+                        "attach_files": [
+                            {
+                                "filename": "GDUTGradeMonitor-patch-v0.3.8-to-v0.3.9.json",
+                                "download_url": "https://gitee.com/download/patch.json",
+                                "filesize": "128",
+                            },
+                            {
+                                "filename": "GDUTGradeMonitor-patch-v0.3.8-to-v0.3.9.zip",
+                                "download_url": "https://gitee.com/download/patch.zip",
+                                "filesize": "2048",
+                            },
+                        ],
+                    }
+                ),
+            ]
+        )
+
+        result = check_latest_release(current_version="0.3.8", requests_module=fake)
+
+        self.assertEqual(result.source_name, "Gitee")
+        self.assertEqual(result.body, "mirror release notes")
+        self.assertEqual(result.patch_update.archive_url, "https://gitee.com/download/patch.zip")
+        self.assertEqual(result.patch_update.archive_size, 2048)
+        self.assertIn("api.github.com", fake.calls[0][0])
+        self.assertIn("gitee.com/api/v5", fake.calls[1][0])
 
     def test_check_latest_release_detects_matching_patch_assets(self):
         fake = FakeRequests(
@@ -136,9 +178,10 @@ class UpdateCheckTests(unittest.TestCase):
 
     def test_check_latest_release_wraps_network_errors_for_gui(self):
         fake = FakeRequests(exc=OSError("network down"))
+        source = UpdateSource("Test", "https://example.invalid/latest", "https://example.invalid/releases", {})
 
         with self.assertRaises(UpdateCheckError) as ctx:
-            check_latest_release(current_version="0.2.2", requests_module=fake)
+            check_latest_release(current_version="0.2.2", requests_module=fake, sources=(source,))
 
         self.assertIn("无法检查更新", str(ctx.exception))
 

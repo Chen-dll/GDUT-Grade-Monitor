@@ -128,7 +128,7 @@ class QtGuiPackagingTests(unittest.TestCase):
         self.assertIn("QProgressDialog", text)
         self.assertIn("def _run_background_with_progress", text)
         self.assertIn("已有一个操作正在进行", text)
-        self.assertIn("正在连接 GitHub Release 检查新版本", text)
+        self.assertIn("正在连接更新源检查新版本", text)
         self.assertIn("正在下载小补丁并校验 SHA256", text)
         self.assertIn("正在只读连接教务系统并检查成绩", text)
         self.assertIn("正在检查本机环境", text)

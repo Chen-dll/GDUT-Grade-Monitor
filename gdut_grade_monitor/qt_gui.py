@@ -1803,7 +1803,7 @@ class GradeMonitorQtApp(QMainWindow):
         settings_grid.addWidget(self._settings_action_card("后台启动", "控制 Windows 登录后是否自动检查成绩。", [install, uninstall]), 1, 0)
         settings_grid.addWidget(self._settings_action_card("多设备通知", "配置微信类、ntfy 或邮件提醒，并设置通知隐私级别。", [notifications]), 1, 1)
         settings_grid.addWidget(self._settings_action_card("配置迁移", "导出或导入非敏感设置，换电脑时不用重新调整偏好。", [export_settings_button, import_settings_button, reset_settings]), 2, 0, 1, 2)
-        settings_grid.addWidget(self._settings_action_card("数据与更新", "打开本地数据目录、检查 GitHub 新版本，或处理卸载残留。", [open_dir, update, cleanup]), 3, 0, 1, 2)
+        settings_grid.addWidget(self._settings_action_card("数据与更新", "打开本地数据目录、检查新版本，或处理卸载残留。", [open_dir, update, cleanup]), 3, 0, 1, 2)
         settings_grid.setColumnStretch(0, 1)
         settings_grid.setColumnStretch(1, 1)
         form_actions = QHBoxLayout()
@@ -2762,7 +2762,7 @@ class GradeMonitorQtApp(QMainWindow):
     def check_for_updates(self) -> None:
         self._run_background_with_progress(
             "检查更新",
-            "正在连接 GitHub Release 检查新版本...",
+            "正在连接更新源检查新版本...",
             lambda: check_latest_release(APP_VERSION),
             self._update_check_complete,
         )
@@ -2776,7 +2776,7 @@ class GradeMonitorQtApp(QMainWindow):
             if release.patch_update and can_apply_patch():
                 patch_size = _format_bytes(release.patch_update.archive_size)
                 box.setInformativeText(
-                    f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n"
+                    f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n更新源: {release.source_name}\n\n"
                     f"此版本提供小补丁，预计下载 {patch_size}，可只下载变化文件并自动应用。"
                     "更新前会校验 SHA256，应用时会短暂关闭并重启程序。\n\n"
                     "小补丁能力从 v0.3.2 开始提供；更早版本需要先下载完整安装包或便携包。"
@@ -2792,11 +2792,11 @@ class GradeMonitorQtApp(QMainWindow):
                 return
             if release.patch_update and not can_apply_patch():
                 box.setInformativeText(
-                    f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n"
+                    f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n更新源: {release.source_name}\n\n"
                     "此版本提供小补丁，但当前不是打包安装版运行，无法自动应用。请打开下载页面获取完整安装包或便携包。"
                 )
             else:
-                box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n\n是否打开下载页面？")
+                box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.name}\n更新源: {release.source_name}\n\n是否打开下载页面？")
             open_button = box.addButton("打开下载页", QMessageBox.AcceptRole)
             box.addButton("稍后", QMessageBox.RejectRole)
             box.exec()
@@ -2804,7 +2804,7 @@ class GradeMonitorQtApp(QMainWindow):
                 QDesktopServices.openUrl(QUrl(release.url))
             return
         box.setText("当前已经是最新版本")
-        box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.tag_name}")
+        box.setInformativeText(f"当前版本: v{APP_VERSION}\n最新版本: {release.tag_name}\n更新源: {release.source_name}")
         box.addButton(QMessageBox.Ok)
         box.exec()
 
