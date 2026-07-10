@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QLockFile, QMarginsF, QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEasingCurve, QLockFile, QMarginsF, QObject, QPropertyAnimation, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -1620,7 +1620,21 @@ class GradeMonitorQtApp(QMainWindow):
             layout.addWidget(value_label)
             metrics.addWidget(card)
 
-        charts = QHBoxLayout()
+        self.grade_charts_collapsed = False
+        self.grade_charts_toggle = QPushButton("收起图表 ▲")
+        self.grade_charts_toggle.setObjectName("chartToggleButton")
+        self.grade_charts_toggle.setToolTip("收起上方图表后，成绩表可以一次显示更多课程。")
+        self.grade_charts_toggle.clicked.connect(self.toggle_grade_charts)
+        note_row = QHBoxLayout()
+        note_row.setSpacing(10)
+        note_row.addWidget(self.grade_stats_note, 1)
+        note_row.addWidget(self.grade_charts_toggle, 0, Qt.AlignRight)
+
+        self.grade_charts_panel = QFrame()
+        self.grade_charts_panel.setObjectName("chartPanel")
+        charts = QHBoxLayout(self.grade_charts_panel)
+        charts.setContentsMargins(0, 0, 0, 0)
+        charts.setSpacing(18)
         trend_card = _card()
         trend_layout = QVBoxLayout(trend_card)
         trend_layout.setContentsMargins(18, 16, 18, 16)
@@ -1686,9 +1700,9 @@ class GradeMonitorQtApp(QMainWindow):
         self.grades_table.cellDoubleClicked.connect(self.show_grade_detail)
         page.layout().addWidget(title)
         page.layout().addWidget(subtitle)
-        page.layout().addWidget(self.grade_stats_note)
+        page.layout().addLayout(note_row)
         page.layout().addLayout(metrics)
-        page.layout().addLayout(charts)
+        page.layout().addWidget(self.grade_charts_panel)
         page.layout().addLayout(filters)
         page.layout().addWidget(self.grades_table, 1)
         return page
@@ -2262,6 +2276,44 @@ class GradeMonitorQtApp(QMainWindow):
         if row < 0 or row >= len(self.visible_grades):
             return
         GradeDetailDialog(self, self.visible_grades[row]).exec()
+
+    def toggle_grade_charts(self) -> None:
+        self._set_grade_charts_collapsed(not self.grade_charts_collapsed, animated=True)
+
+    def _set_grade_charts_collapsed(self, collapsed: bool, *, animated: bool) -> None:
+        self.grade_charts_collapsed = collapsed
+        self.grade_charts_toggle.setText("展开图表 ▼" if collapsed else "收起图表 ▲")
+        panel = self.grade_charts_panel
+        full_height = max(panel.sizeHint().height(), 1)
+        start_height = panel.height() if panel.isVisible() else 0
+        end_height = 0 if collapsed else full_height
+
+        if hasattr(self, "grade_charts_animation"):
+            self.grade_charts_animation.stop()
+        if not collapsed:
+            panel.setVisible(True)
+            panel.setMaximumHeight(start_height or 0)
+        if not animated:
+            panel.setVisible(not collapsed)
+            panel.setMaximumHeight(0 if collapsed else 16777215)
+            return
+
+        animation = QPropertyAnimation(panel, b"maximumHeight", self)
+        animation.setDuration(180)
+        animation.setStartValue(start_height)
+        animation.setEndValue(end_height)
+        animation.setEasingCurve(QEasingCurve.InOutCubic)
+
+        def finish() -> None:
+            if collapsed:
+                panel.setVisible(False)
+                panel.setMaximumHeight(0)
+            else:
+                panel.setMaximumHeight(16777215)
+
+        animation.finished.connect(finish)
+        self.grade_charts_animation = animation
+        animation.start()
 
     def edit_manual_score(self) -> None:
         row = self.grades_table.currentRow()
@@ -2966,6 +3018,17 @@ class GradeMonitorQtApp(QMainWindow):
             #metricCompact { font-size: 17px; font-weight: 800; color: #111827; }
             #largeMetric { font-size: 34px; font-weight: 900; color: #111827; }
             #muted { color: #6b7280; }
+            QFrame#chartPanel { background: transparent; }
+            QPushButton#chartToggleButton {
+                min-width: 92px;
+                padding: 7px 14px;
+                border-radius: 10px;
+                background: #ffffff;
+                color: #1d4ed8;
+                border: 1px solid #dbe8ff;
+                font-weight: 800;
+            }
+            QPushButton#chartToggleButton:hover { background: #eaf2ff; border-color: #bfdbfe; }
             #recentCourse { color: #0f172a; font-weight: 700; }
             #recentMeta { color: #64748b; font-size: 12px; }
             QFrame#recentRow { background: #f8fafc; border: 1px solid #e7edf5; border-radius: 12px; }
