@@ -10,7 +10,7 @@
 
 ## 下载
 
-请到 [GitHub Releases](https://github.com/Chen-Dll/GDUT-Grade-Monitor/releases/latest) 下载最新版；如果访问 GitHub 不稳定，也可以使用同版本 Gitee 镜像下载：
+请到 [GitHub Releases](https://github.com/Chen-Dll/GDUT-Grade-Monitor/releases/latest) 下载最新版；如果访问 GitHub 不稳定，也可以使用 [Gitee 镜像](https://gitee.com/chenpro/GDUT-Grade-Monitor/releases) 下载同版本文件：
 
 - `GDUTGradeMonitor-Setup.exe`：安装版，推荐大多数用户使用。
 - `GDUTGradeMonitor-portable.zip`：便携版，解压后双击 `GDUTGradeMonitor.exe` 即可运行。

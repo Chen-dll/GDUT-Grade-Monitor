@@ -9,7 +9,7 @@ import requests
 from .constants import APP_VERSION
 
 GITHUB_REPO = "Chen-Dll/GDUT-Grade-Monitor"
-GITEE_REPO = "Chen-Dll/GDUT-Grade-Monitor"
+GITEE_REPO = "chenpro/GDUT-Grade-Monitor"
 GITHUB_LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 GITEE_LATEST_RELEASE_API = f"https://gitee.com/api/v5/repos/{GITEE_REPO}/releases/latest"
