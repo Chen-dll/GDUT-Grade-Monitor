@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.9 - 2026-07-11
+
+### Added
+
+- Added a Gitee update-source fallback for users who cannot reliably access GitHub without a VPN.
+
+### Changed
+
+- The update checker now tries GitHub first and automatically falls back to the Gitee mirror when GitHub fails or times out.
+- Update dialogs now show which source provided the version information.
+- README download guidance now links both GitHub Releases and the Gitee mirror.
+
 ## 0.3.8 - 2026-07-10
 
 ### Added
