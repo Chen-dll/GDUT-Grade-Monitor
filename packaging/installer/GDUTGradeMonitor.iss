@@ -1,6 +1,6 @@
 #define SourceRoot "..\.."
 #define AppExeName "GDUTGradeMonitor.exe"
-#define AppVersion "0.3.7"
+#define AppVersion "0.3.8"
 
 [Setup]
 AppId={{9D32DEAF-2BA9-4F75-8B4F-6FB6998B8D20}

@@ -2,7 +2,7 @@
 
 广东工业大学教务系统成绩提醒工具。它会在本机定时、只读查询课程成绩，发现新增成绩或成绩变化时弹出 Windows 通知。
 
-![Version](https://img.shields.io/badge/version-0.3.7-blue)
+![Version](https://img.shields.io/badge/version-0.3.8-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-2563eb)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -374,8 +374,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build_patch.ps1 `
-  -OldVersion 0.3.6 `
-  -NewVersion 0.3.7 `
+  -OldVersion 0.3.7 `
+  -NewVersion 0.3.8 `
   -PreviousDist .\dist-prev\GDUTGradeMonitor `
   -CurrentDist .\dist\GDUTGradeMonitor
 ```

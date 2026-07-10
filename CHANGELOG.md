@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.8 - 2026-07-10
+
+### Added
+
+- Added a smooth collapse/expand control for the two grade analytics charts on the grades page.
+
+### Changed
+
+- Users can now temporarily hide the charts to give the grade table more vertical space, making it easier to review many courses at once.
+
 ## 0.3.7 - 2026-07-10
 
 ### Added
